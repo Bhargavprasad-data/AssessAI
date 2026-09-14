@@ -29,11 +29,12 @@ export function useCameraDetection({
 
   const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const detectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const lastInferenceTimeRef = useRef<number>(0);
+  const isDetectingRef = useRef<boolean>(false);
   const lastViolationTimeRef = useRef<{ [key: string]: number }>({});
 
-  // Discrete Incident State Machine Refs (Each appearance/occurrence counts as exactly 1 strike)
+  // Discrete Incident State Machine Refs (Each physical appearance counts as exactly 1 strike)
   const phoneIncidentActiveRef = useRef<boolean>(false);
   const phoneAbsentConsecutiveRef = useRef<number>(0);
 
@@ -91,7 +92,7 @@ export function useCameraDetection({
     };
   }, []);
 
-  // 2. Setup hidden fallback video and canvas elements for continuous frame analysis
+  // 2. Setup hidden fallback video element for continuous frame analysis
   useEffect(() => {
     if (!hiddenVideoRef.current) {
       const video = document.createElement('video');
@@ -105,18 +106,11 @@ export function useCameraDetection({
       video.style.left = '0px';
       video.style.width = '640px';
       video.style.height = '480px';
-      video.style.opacity = '0.005';
+      video.style.opacity = '0.001';
       video.style.pointerEvents = 'none';
       video.style.zIndex = '-99999';
       document.body.appendChild(video);
       hiddenVideoRef.current = video;
-    }
-
-    if (!canvasRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      canvasRef.current = canvas;
     }
 
     const video = hiddenVideoRef.current;
@@ -142,7 +136,7 @@ export function useCameraDetection({
   const triggerViolation = useCallback((type: string, metadata: Record<string, any>, spokenText?: string) => {
     const now = Date.now();
     const lastTime = lastViolationTimeRef.current[type] || 0;
-    // 1.5s minimal safety threshold
+    // 1.5s minimal safety threshold between repeated events of same type
     if (now - lastTime < 1500) {
       return;
     }
@@ -155,235 +149,221 @@ export function useCameraDetection({
     onViolation?.(type, metadata);
   }, [onViolation]);
 
-  // 4. Continuous AI Object Detection & State Machine Loop
+  // 4. Fast & Accurate AI Object Detection Loop
   useEffect(() => {
     if (!isActive || !isCameraActive || !cameraStream || !modelLoaded || !modelRef.current) {
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
-        detectionIntervalRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
       setDetectedItems([]);
       setMobileWarningActive(false);
       return;
     }
 
-    const runDetection = async () => {
-      const liveVideo = (document.getElementById('proctoring-live-video') as HTMLVideoElement) || hiddenVideoRef.current;
-      const canvas = canvasRef.current;
-      const model = modelRef.current;
+    let isRunning = true;
 
-      if (!liveVideo || !canvas || !model) return;
-      if (liveVideo.readyState < 2 || liveVideo.videoWidth === 0) return;
+    const processFrame = async () => {
+      if (!isRunning) return;
 
-      try {
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
+      const now = Date.now();
+      // Run inference every 120ms for instant mobile detection with low CPU overhead
+      if (now - lastInferenceTimeRef.current >= 120 && !isDetectingRef.current) {
+        const liveVideo = (document.getElementById('proctoring-live-video') as HTMLVideoElement) || hiddenVideoRef.current;
+        const model = modelRef.current;
 
-        const w = liveVideo.videoWidth || 640;
-        const h = liveVideo.videoHeight || 480;
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
-        }
+        if (liveVideo && model && liveVideo.readyState >= 2 && liveVideo.videoWidth > 0) {
+          isDetectingRef.current = true;
+          lastInferenceTimeRef.current = now;
 
-        ctx.drawImage(liveVideo, 0, 0, w, h);
+          try {
+            // High-speed direct WebGL tensor detection directly from video element
+            const predictions = await model.detect(liveVideo, 20, 0.15);
 
-        // Sensitive object detection inference
-        const predictions = await model.detect(canvas, 30, 0.04);
-        
-        const validDetections: DetectedItem[] = predictions.map((p) => ({
-          class: p.class.toLowerCase(),
-          score: p.score,
-          bbox: p.bbox,
-        }));
+            const validDetections: DetectedItem[] = predictions.map((p) => ({
+              class: p.class.toLowerCase(),
+              score: p.score,
+              bbox: p.bbox,
+            }));
 
-        setDetectedItems(validDetections);
+            setDetectedItems(validDetections);
 
-        // -------------------------------------------------------------
-        // A. MOBILE PHONE / ELECTRONIC DEVICE (Counted per physical appearance)
-        // -------------------------------------------------------------
-        const phoneDetection = validDetections.find((d) => {
-          const c = d.class.toLowerCase();
-          const isPhoneOrDevice =
-            c === 'cell phone' ||
-            c === 'remote' ||
-            c === 'camera' ||
-            c === 'telephone' ||
-            c === 'laptop' ||
-            c === 'tv' ||
-            c === 'tablet' ||
-            c === 'mouse' ||
-            c === 'keyboard' ||
-            c === 'electronic device' ||
-            c === 'clock' ||
-            c.includes('phone') ||
-            c.includes('cell') ||
-            c.includes('camera') ||
-            c.includes('remote') ||
-            c.includes('tablet') ||
-            c.includes('device');
+            const w = liveVideo.videoWidth || 640;
+            const h = liveVideo.videoHeight || 480;
 
-          const threshold = (c === 'clock') ? 0.10 : 0.05;
-          return isPhoneOrDevice && d.score >= threshold;
-        });
+            // -------------------------------------------------------------
+            // A. MOBILE PHONE DETECTION (Strictly targeted at cell phones & handheld devices)
+            // Note: Does NOT flag laptop, keyboard, mouse, or background monitors
+            // -------------------------------------------------------------
+            const phoneDetection = validDetections.find((d) => {
+              const c = d.class.toLowerCase();
+              if (c === 'cell phone' || c === 'telephone') {
+                return d.score >= 0.22;
+              }
+              if (c === 'remote') {
+                return d.score >= 0.38;
+              }
+              return false;
+            });
 
-        if (phoneDetection) {
-          // Phone is currently visible in frame
-          setMobileWarningActive(true);
-          phoneAbsentConsecutiveRef.current = 0;
+            if (phoneDetection) {
+              setMobileWarningActive(true);
+              phoneAbsentConsecutiveRef.current = 0;
 
-          // If this is a NEW appearance (rising edge), log exactly 1 strike
-          if (!phoneIncidentActiveRef.current) {
-            phoneIncidentActiveRef.current = true;
-            triggerViolation(
-              'mobile_detected',
-              {
-                object: 'Mobile Phone / Camera / Electronic Device',
-                detected_class: phoneDetection.class,
-                confidence: Math.round(phoneDetection.score * 100),
-                bbox: phoneDetection.bbox,
-              },
-              'Warning: Mobile phone detected. Close your mobile and please write your exam.'
-            );
-          }
-          // While phone stays visible, phoneIncidentActiveRef remains true so NO additional strikes are logged!
-        } else {
-          // Phone is absent in current frame
-          phoneAbsentConsecutiveRef.current += 1;
-          // After 6 consecutive clear frames (~1.5s), mark phone removed and reset incident
-          if (phoneAbsentConsecutiveRef.current >= 6) {
-            setMobileWarningActive(false);
-            phoneIncidentActiveRef.current = false;
-          }
-        }
-
-        // -------------------------------------------------------------
-        // B. UNAUTHORIZED STUDY MATERIALS / BOOKS
-        // -------------------------------------------------------------
-        const bookDetection = validDetections.find((d) => {
-          const c = d.class.toLowerCase();
-          return (
-            c === 'book' ||
-            c === 'backpack' ||
-            c === 'handbag' ||
-            c === 'suitcase' ||
-            c === 'scissors'
-          ) && d.score >= 0.15;
-        });
-
-        if (bookDetection && !phoneDetection) {
-          bookAbsentConsecutiveRef.current = 0;
-          if (!bookIncidentActiveRef.current) {
-            bookIncidentActiveRef.current = true;
-            triggerViolation(
-              'unauthorized_object',
-              {
-                object: 'Study Material / Prohibited Item',
-                detected_class: bookDetection.class,
-                confidence: Math.round(bookDetection.score * 100),
-              },
-              'Warning: Unauthorized study material detected. Please remove it and write your exam.'
-            );
-          }
-        } else {
-          bookAbsentConsecutiveRef.current += 1;
-          if (bookAbsentConsecutiveRef.current >= 6) {
-            bookIncidentActiveRef.current = false;
-          }
-        }
-
-        // -------------------------------------------------------------
-        // C. PERSONS / FACES / GAZE TRACKING
-        // -------------------------------------------------------------
-        const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.25);
-
-        // Multiple persons
-        if (persons.length > 1) {
-          multipleFacesNormalConsecutiveRef.current = 0;
-          if (!multipleFacesIncidentActiveRef.current) {
-            multipleFacesIncidentActiveRef.current = true;
-            triggerViolation(
-              'multiple_faces',
-              {
-                count: persons.length,
-                message: `${persons.length} persons detected in camera frame`,
-              },
-              'Warning: Multiple persons detected in camera frame.'
-            );
-          }
-          noFaceConsecutiveFramesRef.current = 0;
-          lookingAwayConsecutiveFramesRef.current = 0;
-        } else {
-          multipleFacesNormalConsecutiveRef.current += 1;
-          if (multipleFacesNormalConsecutiveRef.current >= 6) {
-            multipleFacesIncidentActiveRef.current = false;
-          }
-        }
-
-        // No face / Candidate absent
-        if (persons.length === 0) {
-          facePresentConsecutiveRef.current = 0;
-          noFaceConsecutiveFramesRef.current += 1;
-          lookingAwayConsecutiveFramesRef.current = 0;
-
-          if (noFaceConsecutiveFramesRef.current >= 4 && !noFaceIncidentActiveRef.current) {
-            noFaceIncidentActiveRef.current = true;
-            triggerViolation(
-              'no_face',
-              { message: 'Candidate face not visible in camera frame' },
-              'Warning: Face not visible. Please look at the camera to write your exam.'
-            );
-          }
-        } else {
-          facePresentConsecutiveRef.current += 1;
-          noFaceConsecutiveFramesRef.current = 0;
-          if (facePresentConsecutiveRef.current >= 6) {
-            noFaceIncidentActiveRef.current = false;
-          }
-        }
-
-        // Looking away / Gaze deviation (when single person is present)
-        if (persons.length === 1) {
-          const candidate = persons[0];
-          const [px, py, pw, ph] = candidate.bbox;
-          const centerX = (px + pw / 2) / w;
-          const centerY = (py + ph / 2) / h;
-
-          const isLookingAway = centerX < 0.14 || centerX > 0.86 || centerY > 0.88;
-
-          if (isLookingAway) {
-            lookingNormalConsecutiveRef.current = 0;
-            lookingAwayConsecutiveFramesRef.current += 1;
-            if (lookingAwayConsecutiveFramesRef.current >= 5 && !lookingAwayIncidentActiveRef.current) {
-              lookingAwayIncidentActiveRef.current = true;
-              triggerViolation(
-                'looking_away',
-                {
-                  position: { centerX: Math.round(centerX * 100), centerY: Math.round(centerY * 100) },
-                  message: 'Gaze / head pose deviated from examination screen',
-                },
-                'Warning: Looking away from screen detected. Please face the screen to write your exam.'
-              );
+              // If newly detected in this physical appearance, trigger exactly 1 strike
+              if (!phoneIncidentActiveRef.current) {
+                phoneIncidentActiveRef.current = true;
+                triggerViolation(
+                  'mobile_detected',
+                  {
+                    object: 'Mobile Phone',
+                    detected_class: phoneDetection.class,
+                    confidence: Math.round(phoneDetection.score * 100),
+                    bbox: phoneDetection.bbox,
+                  },
+                  'Warning: Mobile phone detected. Close your mobile and please write your exam.'
+                );
+              }
+            } else {
+              phoneAbsentConsecutiveRef.current += 1;
+              // Reset incident after 4 consecutive clean frames (~500ms)
+              if (phoneAbsentConsecutiveRef.current >= 4) {
+                setMobileWarningActive(false);
+                phoneIncidentActiveRef.current = false;
+              }
             }
-          } else {
-            lookingNormalConsecutiveRef.current += 1;
-            lookingAwayConsecutiveFramesRef.current = 0;
-            if (lookingNormalConsecutiveRef.current >= 6) {
-              lookingAwayIncidentActiveRef.current = false;
+
+            // -------------------------------------------------------------
+            // B. UNAUTHORIZED STUDY MATERIALS / BOOKS
+            // -------------------------------------------------------------
+            const bookDetection = validDetections.find((d) => {
+              const c = d.class.toLowerCase();
+              return (c === 'book' || c === 'backpack') && d.score >= 0.30;
+            });
+
+            if (bookDetection && !phoneDetection) {
+              bookAbsentConsecutiveRef.current = 0;
+              if (!bookIncidentActiveRef.current) {
+                bookIncidentActiveRef.current = true;
+                triggerViolation(
+                  'unauthorized_object',
+                  {
+                    object: 'Study Material / Book',
+                    detected_class: bookDetection.class,
+                    confidence: Math.round(bookDetection.score * 100),
+                  },
+                  'Warning: Unauthorized study material detected. Please remove it and write your exam.'
+                );
+              }
+            } else {
+              bookAbsentConsecutiveRef.current += 1;
+              if (bookAbsentConsecutiveRef.current >= 5) {
+                bookIncidentActiveRef.current = false;
+              }
             }
+
+            // -------------------------------------------------------------
+            // C. PERSONS / MULTIPLE FACES / NO FACE
+            // -------------------------------------------------------------
+            const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.30);
+
+            // Multiple persons in camera view
+            if (persons.length > 1) {
+              multipleFacesNormalConsecutiveRef.current = 0;
+              if (!multipleFacesIncidentActiveRef.current) {
+                multipleFacesIncidentActiveRef.current = true;
+                triggerViolation(
+                  'multiple_faces',
+                  {
+                    count: persons.length,
+                    message: `${persons.length} persons detected in camera frame`,
+                  },
+                  'Warning: Multiple persons detected in camera frame.'
+                );
+              }
+              noFaceConsecutiveFramesRef.current = 0;
+              lookingAwayConsecutiveFramesRef.current = 0;
+            } else {
+              multipleFacesNormalConsecutiveRef.current += 1;
+              if (multipleFacesNormalConsecutiveRef.current >= 5) {
+                multipleFacesIncidentActiveRef.current = false;
+              }
+            }
+
+            // No face / Candidate absent
+            if (persons.length === 0) {
+              facePresentConsecutiveRef.current = 0;
+              noFaceConsecutiveFramesRef.current += 1;
+              lookingAwayConsecutiveFramesRef.current = 0;
+
+              // Require 5 consecutive absent frames (~600ms) to prevent single-frame blinks
+              if (noFaceConsecutiveFramesRef.current >= 5 && !noFaceIncidentActiveRef.current) {
+                noFaceIncidentActiveRef.current = true;
+                triggerViolation(
+                  'no_face',
+                  { message: 'Candidate face not visible in camera frame' },
+                  'Warning: Face not visible. Please look at the camera to write your exam.'
+                );
+              }
+            } else {
+              facePresentConsecutiveRef.current += 1;
+              noFaceConsecutiveFramesRef.current = 0;
+              if (facePresentConsecutiveRef.current >= 4) {
+                noFaceIncidentActiveRef.current = false;
+              }
+            }
+
+            // Looking away / Gaze deviation (when single person is present)
+            if (persons.length === 1) {
+              const candidate = persons[0];
+              const [px, py, pw, ph] = candidate.bbox;
+              const centerX = (px + pw / 2) / w;
+              const centerY = (py + ph / 2) / h;
+
+              const isLookingAway = centerX < 0.12 || centerX > 0.88 || centerY > 0.90;
+
+              if (isLookingAway) {
+                lookingNormalConsecutiveRef.current = 0;
+                lookingAwayConsecutiveFramesRef.current += 1;
+                if (lookingAwayConsecutiveFramesRef.current >= 6 && !lookingAwayIncidentActiveRef.current) {
+                  lookingAwayIncidentActiveRef.current = true;
+                  triggerViolation(
+                    'looking_away',
+                    {
+                      position: { centerX: Math.round(centerX * 100), centerY: Math.round(centerY * 100) },
+                      message: 'Gaze / head pose deviated from examination screen',
+                    },
+                    'Warning: Looking away from screen detected. Please face the screen to write your exam.'
+                  );
+                }
+              } else {
+                lookingNormalConsecutiveRef.current += 1;
+                lookingAwayConsecutiveFramesRef.current = 0;
+                if (lookingNormalConsecutiveRef.current >= 5) {
+                  lookingAwayIncidentActiveRef.current = false;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Object detection inference frame error:', err);
+          } finally {
+            isDetectingRef.current = false;
           }
         }
-      } catch (err) {
-        console.warn('Object detection inference frame error:', err);
+      }
+
+      if (isRunning) {
+        animationFrameRef.current = requestAnimationFrame(processFrame);
       }
     };
 
-    detectionIntervalRef.current = setInterval(runDetection, 250);
+    animationFrameRef.current = requestAnimationFrame(processFrame);
 
     return () => {
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
-        detectionIntervalRef.current = null;
+      isRunning = false;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
   }, [isActive, isCameraActive, cameraStream, modelLoaded, triggerViolation]);
