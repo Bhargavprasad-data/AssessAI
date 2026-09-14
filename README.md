@@ -89,6 +89,21 @@ The system provides 3 completely isolated, dedicated frontend applications tailo
 
 ## 🔬 Core Algorithms & Mathematical Formulations
 
+### 📊 Algorithmic Complexity & Architecture Matrix
+
+| Subsystem | Algorithm / Technique | Complexity | Primary Purpose |
+| :--- | :--- | :--- | :--- |
+| **Adaptive Engine** | Speed-Accuracy State Machine | $\mathcal{O}(1)$ | Dynamically adjusts exam difficulty |
+| **Adaptive Engine** | Historical Exclusion Reservoir | $\mathcal{O}(K)$ | Guarantees non-repeating dynamic questions |
+| **Computer Vision** | MobileNetV2 Single Shot Detector | $\mathcal{O}(N \times W \times H)$ | Real-time object & person detection in browser |
+| **Proctoring** | Gaze Pose Centroid Estimation | $\mathcal{O}(1)$ | Flags screen look-aways |
+| **Proctoring** | Temporal Edge Incident Filter | $\mathcal{O}(1)$ | 1 strike per continuous physical appearance |
+| **Audio** | Discrete RMS Energy Computation | $\mathcal{O}(N)$ | Real-time microphone noise detection |
+| **NLP** | Token-Level Jaccard Similarity | $\mathcal{O}(\|T_A\| + \|T_B\|)$ | Prevents semantic duplicate questions |
+| **NLP** | Exponential Backoff Circuit Breaker | $\mathcal{O}(P)$ | Multi-cloud LLM failover & resilience |
+| **Security** | bcrypt Key Expansion | $\mathcal{O}(2^{\text{cost}})$ | Secure password storage |
+| **Security** | HMAC-SHA256 Digital Signature | $\mathcal{O}(M)$ | Tamper-proof stateless JWT tokens |
+
 ### 1. Real-Time Adaptive Difficulty Algorithm
 The engine evaluates each question submission dynamically to select the candidate's next question difficulty tier:
 
