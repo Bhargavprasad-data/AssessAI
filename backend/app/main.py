@@ -120,3 +120,4 @@ app.include_router(teacher_router, prefix=settings.API_V1_STR)
 app.include_router(student_router, prefix=settings.API_V1_STR)
 app.include_router(proctoring_router, prefix=settings.API_V1_STR)
 app.include_router(ws_router, prefix=settings.API_V1_STR)
+app.include_router(ws_router)  # Also mount at root (/ws/...) for direct WebSocket paths
