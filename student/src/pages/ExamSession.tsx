@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiFetch } from '../api/client';
+import { apiFetch, getWsUrl } from '../api/client';
 import type { CurrentQuestion, AttemptResults } from '../types';
 import { useProctoring } from '../hooks/useProctoring';
 import { useProctoringMedia } from '../hooks/useProctoringMedia';
@@ -434,8 +434,7 @@ export const ExamSession: React.FC = () => {
   useEffect(() => {
     if (!assessmentId) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/assessments/${assessmentId}/leaderboard`;
+    const wsUrl = getWsUrl(`/ws/assessments/${assessmentId}/leaderboard`);
 
     let ws: WebSocket | null = null;
     try {

@@ -5,6 +5,20 @@ export function getApiUrl(endpoint: string): string {
   return `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 }
 
+export function getWsUrl(endpoint: string): string {
+  const cleanPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (import.meta.env.VITE_API_URL) {
+    const httpUrl = import.meta.env.VITE_API_URL.replace(/\/$/, '');
+    const wsBase = httpUrl.replace(/^http/, 'ws');
+    return `${wsBase}${cleanPath}`;
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `${protocol}//127.0.0.1:8000${cleanPath}`;
+  }
+  return `${protocol}//${window.location.host}${cleanPath}`;
+}
+
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
   return match ? decodeURIComponent(match[2]) : null;

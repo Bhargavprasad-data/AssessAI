@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { LeaderboardEntry, ViolationEvent } from '../types';
-import { apiFetch } from '../api/client';
+import { apiFetch, getWsUrl } from '../api/client';
 
 export const useLeaderboard = (assessmentId: string) => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -28,9 +28,8 @@ export const useLeaderboard = (assessmentId: string) => {
     // Fetch initial data via HTTP
     pollLeaderboard();
 
-    // Setup WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/assessments/${assessmentId}/leaderboard`;
+    // Setup WebSocket with proper endpoint routing
+    const wsUrl = getWsUrl(`/ws/assessments/${assessmentId}/leaderboard`);
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
