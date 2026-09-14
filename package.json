@@ -5,7 +5,7 @@
   "description": "AI-Based Adaptive Online Assessment and Smart Proctoring System",
   "scripts": {
     "dev": "node start-all.js",
-    "start": "node start-all.js",
+    "start": "node serve-static.js",
     "dev:backend": "npm --prefix backend run dev",
     "dev:student": "npm --prefix student run dev",
     "dev:teacher": "npm --prefix teacher run dev",
