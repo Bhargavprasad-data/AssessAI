@@ -12,6 +12,7 @@
     "dev:admin": "npm --prefix admin run dev",
     "build:student": "npm --prefix student run build",
     "build:teacher": "npm --prefix teacher run build",
-    "build:admin": "npm --prefix admin run build"
+    "build:admin": "npm --prefix admin run build",
+    "build": "npm run build:student && npm run build:teacher && npm run build:admin"
   }
 }
