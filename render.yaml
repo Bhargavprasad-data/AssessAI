@@ -1,0 +1,89 @@
+services:
+  # 1. FastAPI Backend Web Service
+  - type: web
+    name: assessai-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: APP_NAME
+        value: AssessAI Smart Proctoring System
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CSRF_SECRET_KEY
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: "none"
+      - key: DEFAULT_MAX_VIOLATIONS
+        value: "3"
+      - key: VIOLATION_DEBOUNCE_SECONDS
+        value: "2.0"
+      - key: AI_PROVIDER_ORDER
+        value: "gemini,anthropic,openai,ollama,mock"
+      - key: MOCK_AI_ENABLED
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # 2. Student Portal Static Site
+  - type: web
+    name: assessai-student
+    env: static
+    rootDir: student
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: assessai-backend
+          property: url
+
+  # 3. Teacher Portal Static Site
+  - type: web
+    name: assessai-teacher
+    env: static
+    rootDir: teacher
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: assessai-backend
+          property: url
+
+  # 4. Admin Portal Static Site
+  - type: web
+    name: assessai-admin
+    env: static
+    rootDir: admin
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: assessai-backend
+          property: url

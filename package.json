@@ -1,0 +1,17 @@
+{
+  "name": "smart-proctoring-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-Based Adaptive Online Assessment and Smart Proctoring System",
+  "scripts": {
+    "dev": "node start-all.js",
+    "start": "node start-all.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:student": "npm --prefix student run dev",
+    "dev:teacher": "npm --prefix teacher run dev",
+    "dev:admin": "npm --prefix admin run dev",
+    "build:student": "npm --prefix student run build",
+    "build:teacher": "npm --prefix teacher run build",
+    "build:admin": "npm --prefix admin run build"
+  }
+}

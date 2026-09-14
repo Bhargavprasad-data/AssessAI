@@ -1,0 +1,10 @@
+{
+  "name": "proctor-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FastAPI backend for AI-Based Adaptive Online Assessment & Smart Proctoring",
+  "scripts": {
+    "dev": "node runner.js",
+    "start": "node runner.js"
+  }
+}

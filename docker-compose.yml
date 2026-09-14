@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: proctor_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: proctor_user
+      POSTGRES_PASSWORD: proctor_secure_password
+      POSTGRES_DB: proctor_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proctor_user -d proctor_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: proctor_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://proctor_user:proctor_secure_password@postgres:5432/proctor_db
+      SECRET_KEY: ${SECRET_KEY:-prod-secret-change-this-string-in-production-min-32-chars!}
+      CSRF_SECRET_KEY: ${CSRF_SECRET_KEY:-prod-csrf-change-this-string-in-production!}
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: strict
+      UPLOAD_DIR: /app/uploads
+      AI_PROVIDER_ORDER: ${AI_PROVIDER_ORDER:-anthropic,openai,ollama,mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      MOCK_AI_ENABLED: ${MOCK_AI_ENABLED:-true}
+    volumes:
+      - backend_uploads:/app/uploads
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: proctor_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
+  backend_uploads:
