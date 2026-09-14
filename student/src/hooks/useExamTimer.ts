@@ -6,20 +6,23 @@ export const useExamTimer = (
   urgentThreshold: number = 60,
   resetKey?: string | number
 ) => {
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(initialSeconds);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(Math.max(0, initialSeconds));
   const onExpireRef = useRef(onExpire);
   onExpireRef.current = onExpire;
 
   const hasExpiredRef = useRef<boolean>(false);
   const endTimeRef = useRef<number | null>(null);
 
-  // Sync / Reset target timestamp whenever initialSeconds or resetKey updates with valid positive seconds
+  // Sync / Reset target timestamp whenever initialSeconds or resetKey updates
   useEffect(() => {
     if (initialSeconds > 0) {
       hasExpiredRef.current = false;
       endTimeRef.current = Date.now() + initialSeconds * 1000;
       setSecondsRemaining(initialSeconds);
-    } else if (!endTimeRef.current) {
+    } else {
+      // If initialSeconds is 0 or negative, explicitly terminate the active countdown
+      hasExpiredRef.current = false;
+      endTimeRef.current = null;
       setSecondsRemaining(0);
     }
   }, [initialSeconds, resetKey]);

@@ -149,6 +149,7 @@ export const ExamSession: React.FC = () => {
 
   // Answer Submission
   const handleSubmitAnswer = useCallback(async (isTimeout: boolean = false) => {
+    if (submissionSummary) return; // Ignore any stray per-question timers when already reviewing
     const q = currentQuestionRef.current;
     if (!attemptId || !q || submittingRef.current) return;
     if (!isTimeout && selectedOption === null) return;
@@ -173,6 +174,8 @@ export const ExamSession: React.FC = () => {
       setSelectedOption(null);
 
       if (res.status === 'submitted') {
+        setCurrentQuestion(null);
+        currentQuestionRef.current = null;
         try {
           const resultsData = await apiFetch<AttemptResults>(`/api/student/attempts/${attemptId}/results`);
           const totalQ = resultsData.answers_breakdown?.length || q.max_questions || 10;
@@ -216,18 +219,20 @@ export const ExamSession: React.FC = () => {
       setError(errMsg);
       if (errMsg.toLowerCase().includes('terminated')) {
         setTerminatedReason(errMsg);
-      } else if (errMsg.toLowerCase().includes('already submitted') || errMsg.toLowerCase().includes('already completed')) {
+      } else if (!submissionSummary && (errMsg.toLowerCase().includes('already submitted') || errMsg.toLowerCase().includes('already completed'))) {
         navigate(`/student/attempts/${attemptId}/results`);
       }
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
     }
-  }, [attemptId, selectedOption, navigate]);
+  }, [attemptId, selectedOption, submissionSummary, navigate]);
 
   const handleTimeoutSubmission = useCallback(() => {
-    handleSubmitAnswer(true);
-  }, [handleSubmitAnswer]);
+    if (!submissionSummary) {
+      handleSubmitAnswer(true);
+    }
+  }, [handleSubmitAnswer, submissionSummary]);
 
   const [overallExamSeconds, setOverallExamSeconds] = useState<number>(0);
 
@@ -256,12 +261,12 @@ export const ExamSession: React.FC = () => {
     attemptId || 'overall_exam_timer'
   );
 
-  // Per-Question Timer (Yellow box: resets on every question change via question_id)
+  // Per-Question Timer (Yellow box: resets on every question change; stopped when review screen is active)
   const { formatted: formattedPerQTime, isUrgent: isPerQUrgent } = useExamTimer(
-    currentQuestion?.per_question_time_remaining_seconds || 0,
+    submissionSummary ? 0 : (currentQuestion?.per_question_time_remaining_seconds || 0),
     handleTimeoutSubmission,
     15,
-    currentQuestion?.question_id || 'per_question_timer'
+    submissionSummary ? 'review_active' : (currentQuestion?.question_id || 'per_question_timer')
   );
 
   // Periodic heartbeat every 30 seconds
