@@ -23,7 +23,7 @@ from app.schemas.question import QuestionOut, QuestionUpdate, GenerateMultipleRe
 from app.schemas.assessment import AssessmentCreate, AssessmentUpdate, AssessmentOut, AssessmentPublishRequest
 from app.schemas.proctoring import BanOut
 from app.schemas.analytics import AssessmentAnalyticsOut, ScoreDistributionBucket
-from app.api.deps import require_teacher
+from app.api.deps import require_teacher, require_teacher_or_admin
 from app.storage.local import get_storage_provider
 from app.services.pdf_service import extract_text_from_pdf, PDFProcessingError
 from app.services.audit_service import record_audit_event
@@ -1189,11 +1189,11 @@ async def get_assessment_analytics(
 @router.get("/assessments/{assessment_id}/export")
 async def export_attempts_csv(
     assessment_id: uuid.UUID,
-    current_teacher: User = Depends(require_teacher),
+    current_teacher: User = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
     assessment = await db.get(Assessment, assessment_id)
-    if not assessment or assessment.teacher_id != current_teacher.id:
+    if not assessment or (current_teacher.role != "admin" and assessment.teacher_id != current_teacher.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found.")
 
     stmt = (

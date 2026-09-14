@@ -6,7 +6,7 @@ import {
   BarChart3, AlertTriangle, CheckCircle, XCircle,
   Activity, Ban, UserCheck
 } from 'lucide-react';
-import { apiFetch } from '../api/client';
+import { apiFetch, getApiUrl } from '../api/client';
 import { useLeaderboard } from '../hooks/useLeaderboard';
 import type { AssessmentAnalytics, AttemptReviewItem, Assessment, ViolationEvent } from '../types';
 import Badge from '../components/common/Badge';
@@ -97,10 +97,47 @@ export default function AssessmentAnalyticsPage() {
     },
   });
 
-  // Export CSV Handler
-  const handleExportCSV = () => {
-    if (!assessmentId) return;
-    window.open(`/api/teacher/assessments/${assessmentId}/export`, '_blank');
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Authenticated CSV Export Handler
+  const handleExportCSV = async () => {
+    if (!assessmentId || isExporting) return;
+    setIsExporting(true);
+    try {
+      const authToken = localStorage.getItem('auth_token');
+      const res = await fetch(getApiUrl(`/api/teacher/assessments/${assessmentId}/export`), {
+        method: 'GET',
+        headers: {
+          'X-Expected-Role': 'teacher',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        let errMessage = `Export failed with status ${res.status}`;
+        try {
+          const errJson = await res.json();
+          if (errJson.detail) errMessage = errJson.detail;
+        } catch {}
+        throw new Error(errMessage);
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `assessment_${assessmentId}_attempts.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Failed to export CSV:', err);
+      alert(err.message || 'Failed to export CSV file.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleApplyBan = (e: React.FormEvent) => {
@@ -147,10 +184,11 @@ export default function AssessmentAnalyticsPage() {
 
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 text-brand-700 dark:text-brand-300 text-xs font-semibold transition-all shadow-sm"
+            disabled={isExporting}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 text-brand-700 dark:text-brand-300 text-xs font-semibold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
+            <Download className={`w-3.5 h-3.5 ${isExporting ? 'animate-bounce' : ''}`} />
+            {isExporting ? 'Exporting...' : 'Export CSV'}
           </button>
 
           {/* <button
