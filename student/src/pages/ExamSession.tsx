@@ -229,9 +229,17 @@ export const ExamSession: React.FC = () => {
     handleSubmitAnswer(true);
   }, [handleSubmitAnswer]);
 
+  const [overallExamSeconds, setOverallExamSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    if (currentQuestion?.time_remaining_seconds && currentQuestion.time_remaining_seconds > 0) {
+      setOverallExamSeconds(currentQuestion.time_remaining_seconds);
+    }
+  }, [currentQuestion?.time_remaining_seconds]);
+
   // Overall Exam Timer expiration handler:
-  // If student is on the review screen and exam timer runs out, auto-finalize to results immediately.
-  // If student is answering a question, auto-submit that question as timed out.
+  // If student is on the review screen and exam timer runs out (00:00), auto-finalize to results.
+  // If student is answering a question and exam timer runs out, auto-submit that question as timed out.
   const handleExamTimeExpired = useCallback(() => {
     if (submissionSummary) {
       navigate(`/student/attempts/${submissionSummary.attemptId}/results`);
@@ -240,9 +248,9 @@ export const ExamSession: React.FC = () => {
     }
   }, [submissionSummary, navigate, handleTimeoutSubmission]);
 
-  // Overall Exam Timer (resets with attemptId or exam duration updates)
+  // Overall Exam Timer (runs continuously for the attemptId across questions and review screen)
   const { formatted: formattedExamTime, isUrgent: isExamUrgent } = useExamTimer(
-    currentQuestion?.time_remaining_seconds || 0,
+    overallExamSeconds,
     handleExamTimeExpired,
     60,
     attemptId || 'overall_exam_timer'

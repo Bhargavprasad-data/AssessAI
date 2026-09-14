@@ -13,24 +13,13 @@ export const useExamTimer = (
   const hasExpiredRef = useRef<boolean>(false);
   const endTimeRef = useRef<number | null>(null);
 
-  // Sync / Reset target timestamp whenever initialSeconds or resetKey updates
+  // Sync / Reset target timestamp whenever initialSeconds or resetKey updates with valid positive seconds
   useEffect(() => {
     if (initialSeconds > 0) {
       hasExpiredRef.current = false;
       endTimeRef.current = Date.now() + initialSeconds * 1000;
       setSecondsRemaining(initialSeconds);
-    } else if (initialSeconds === 0 && resetKey) {
-      endTimeRef.current = null;
-      setSecondsRemaining(0);
-      if (!hasExpiredRef.current) {
-        hasExpiredRef.current = true;
-        const timer = setTimeout(() => {
-          onExpireRef.current?.();
-        }, 150);
-        return () => clearTimeout(timer);
-      }
-    } else {
-      endTimeRef.current = null;
+    } else if (!endTimeRef.current) {
       setSecondsRemaining(0);
     }
   }, [initialSeconds, resetKey]);
@@ -47,8 +36,9 @@ export const useExamTimer = (
 
       setSecondsRemaining(remaining);
 
-      if (remaining <= 0) {
+      if (diffMs <= 0) {
         endTimeRef.current = null;
+        setSecondsRemaining(0);
         if (!hasExpiredRef.current) {
           hasExpiredRef.current = true;
           onExpireRef.current?.();
@@ -74,5 +64,3 @@ export const useExamTimer = (
     isUrgent: secondsRemaining > 0 && secondsRemaining <= urgentThreshold,
   };
 };
-
-
