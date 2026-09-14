@@ -6,6 +6,13 @@ from app.config import settings
 
 from sqlalchemy import event
 
+# Sanitize and normalize database URL
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Engine configuration
 connect_args = {}
 engine_kwargs = {
@@ -13,18 +20,18 @@ engine_kwargs = {
     "future": True,
     "pool_pre_ping": True,
 }
-if "sqlite" in settings.DATABASE_URL:
+if "sqlite" in db_url:
     connect_args["check_same_thread"] = False
     connect_args["timeout"] = 30
     engine_kwargs["poolclass"] = NullPool
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    db_url,
     connect_args=connect_args,
     **engine_kwargs
 )
 
-if "sqlite" in settings.DATABASE_URL:
+if "sqlite" in db_url:
     @event.listens_for(engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
