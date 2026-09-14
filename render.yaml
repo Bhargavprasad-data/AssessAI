@@ -57,10 +57,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: assessai-backend
-          property: url
+        sync: false
 
   # 3. Teacher Portal Static Site
   - type: web
@@ -75,10 +72,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: assessai-backend
-          property: url
+        sync: false
 
   # 4. Admin Portal Static Site
   - type: web
@@ -93,7 +87,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: assessai-backend
-          property: url
+        sync: false
