@@ -20,21 +20,23 @@
 
 ## 📑 Table of Contents
 1. [Key Features & Capabilities](#-key-features--capabilities)
-2. [Role Portals Overview](#-role-portals-overview)
-3. [Architecture & System Invariants](#-architecture--system-invariants)
-4. [Technology Stack](#-technology-stack)
-5. [Project Directory Structure](#-project-directory-structure)
-6. [Local Quickstart & Installation](#-local-quickstart--installation)
-7. [Cloud Deployment on Render](#-cloud-deployment-on-render)
-8. [Demo Credentials](#-demo-credentials)
-9. [Automated Test Suite](#-automated-test-suite)
+2. [Role Portals & Dashboards](#-role-portals--dashboards)
+3. [Core Algorithms & Mathematical Formulations](#-core-algorithms--mathematical-formulations)
+4. [Architecture & System Invariants](#-architecture--system-invariants)
+5. [Technology Stack](#-technology-stack)
+6. [Project Directory Structure](#-project-directory-structure)
+7. [Local Quickstart & Installation](#-local-quickstart--installation)
+8. [Cloud Deployment on Render (3 Distinct Portals)](#-cloud-deployment-on-render-3-distinct-portals)
+9. [Demo Credentials](#-demo-credentials)
+10. [Automated Test Suite](#-automated-test-suite)
+11. [License](#-license)
 
 ---
 
 ## 🌟 Key Features & Capabilities
 
 ### 🤖 Multi-Provider AI Question Generator
-- **PDF Syllabus Ingestion**: Upload course material PDFs (up to 20MB); the backend extracts text chunks, computes semantic embeddings, and creates context-grounded MCQs.
+- **PDF Syllabus Ingestion**: Upload course material PDFs (up to 20MB); the backend extracts text chunks, computes semantic context, and creates context-grounded MCQs.
 - **Dynamic 3-Tier Difficulty**: Questions are classified into **Easy**, **Medium**, and **Hard** with explanatory rationales and `source_chunk_ref` traceability.
 - **Multi-Cloud AI Provider Chain**:
   - `Google Gemini` (`gemini-1.5-flash` / `gemini-1.5-pro`)
@@ -42,13 +44,13 @@
   - `OpenAI` (`gpt-4o-mini` / `gpt-4o`)
   - `Ollama` (Local self-hosted models like `llama3`)
   - `Smart NLP Local Extractor` (Offline zero-dependency fallback)
-- **Circuit Breaker & Deduplication**: Token-based Jaccard similarity prevents duplicate questions, and circuit breakers handle rate limits with a 3-round regeneration shortfall cap.
+- **Circuit Breaker & Deduplication**: Token-based Jaccard similarity prevents duplicate questions, and circuit breakers handle rate limits with automatic failover.
 
 ### 🎯 Real-Time Difficulty-Adaptive Engine
 - Dynamically scales difficulty question-by-question based on the candidate's live performance:
   - **`CORRECT + FAST`**: Increments promotion counter $\rightarrow$ elevates difficulty (`Easy` $\rightarrow$ `Medium` $\rightarrow$ `Hard`).
   - **`CORRECT + SLOW` / `INCORRECT` / `TIMEOUT`**: Increments demotion counter $\rightarrow$ adjusts to lower difficulty.
-- **Accessibility Mode (`enable_speed_adaptive = false`)**: Disables speed pressure, promoting candidates based solely on correctness.
+- **Accessibility Mode (`enable_speed_adaptive = false`)**: Disables speed pressure, promoting candidates based solely on accuracy.
 
 ### 🛡️ Edge-Biometric Smart Proctoring
 - **Client-Side AI Object Detection**: Powered by TensorFlow.js and COCO-SSD running directly on WebGL (120ms inference loop):
@@ -72,14 +74,66 @@
 
 ---
 
-## 👥 Role Portals Overview
+## 👥 Role Portals & Dashboards
 
-| Portal | Port (Local) | Features |
-| :--- | :--- | :--- |
-| **🎓 Student Portal** | `http://localhost:3000` | Hardware setup check, proctoring consent, adaptive question runner, live proctoring HUD, and full attempt review. |
-| **👩‍🏫 Teacher Portal** | `http://localhost:3001` | PDF material uploader, AI MCQ generator, assessment configurator, live candidate monitoring, and revoke/unban controls. |
-| **🧑‍💼 Admin Portal** | `http://localhost:3002` | User role management, platform-wide global suspension, system health monitoring, and cryptographic audit log trails. |
-| **⚡ Backend API** | `http://127.0.0.1:8000` | FastAPI application, async database engine, Swagger documentation (`/docs`), and WebSocket live hub. |
+The system provides 3 completely isolated, dedicated frontend applications tailored to each role:
+
+| Portal | Local Port | Production Environment | Capabilities |
+| :--- | :--- | :--- | :--- |
+| **🎓 Student Portal** | `http://localhost:3000` | `https://assessai-student.onrender.com` | Hardware setup check, proctoring consent, adaptive question runner, live proctoring HUD, and full attempt review. |
+| **👩‍🏫 Teacher Portal** | `http://localhost:3001` | `https://assessai-teacher.onrender.com` | PDF material uploader, AI MCQ generator, assessment configurator, live candidate monitoring, and revoke/unban controls. |
+| **🧑‍💼 Admin Portal** | `http://localhost:3002` | `https://assessai-admin.onrender.com` | User role management, platform-wide global suspension, system health monitoring, and cryptographic audit log trails. |
+| **⚡ Backend API** | `http://127.0.0.1:8000` | `https://assessai-backend.onrender.com` | FastAPI application, async database engine, Swagger documentation (`/docs`), and WebSocket live hub. |
+
+---
+
+## 🔬 Core Algorithms & Mathematical Formulations
+
+### 1. Real-Time Adaptive Difficulty Algorithm
+The engine evaluates each question submission dynamically to select the candidate's next question difficulty tier:
+
+$$\text{Time Threshold } T_{\text{fast}} = \frac{T_{\text{allocated}}}{2}$$
+
+```
+                ┌───────────────────────────────────┐
+                │          Answer Received          │
+                └─────────────────┬─────────────────┘
+                                  │
+                  Is Answer Correct && Time <= T_fast?
+                     /                         \
+                   YES                          NO
+                   /                             \
+     ┌────────────────────────────┐    ┌────────────────────────────┐
+     │  promotion_counter += 1    │    │   demotion_counter += 1    │
+     │  demotion_counter = 0      │    │   promotion_counter = 0    │
+     └─────────────┬──────────────┘    └─────────────┬──────────────┘
+                   │                                 │
+     promotion_counter >= 2?           demotion_counter >= 2 (or incorrect)?
+           /              \                          /              \
+         YES               NO                      YES               NO
+         /                  \                      /                  \
+Elevate Difficulty    Maintain Tier        Lower Difficulty     Maintain Tier
+(Easy->Med->Hard)                          (Hard->Med->Easy)
+```
+
+### 2. Edge-Biometric Computer Vision Pipeline (TF.js + COCO-SSD)
+- **Inference Interval**: $\Delta t = 120\text{ ms}$ on client GPU via WebGL.
+- **Incident State-Machine**: Debounced using a continuous-frame threshold buffer ($N=3$ consecutive detections) to transition from `CLEAR` $\rightarrow$ `VIOLATION_TRIGGERED` $\rightarrow$ `RESTORED`.
+- **Gaze Deviation**: Calculated via eye center offset vector relative to the facial bounding box centroid:
+
+$$\theta_{\text{yaw}} = \arctan\left(\frac{x_{\text{nose}} - x_{\text{face\_center}}}{w_{\text{face}}}\right)$$
+
+### 3. Jaccard Semantic Deduplication for AI Question Generation
+To prevent repetitive questions generated from multiple chunks:
+
+$$J(Q_A, Q_B) = \frac{|T(Q_A) \cap T(Q_B)|}{|T(Q_A) \cup T(Q_B)|}$$
+
+Where $T(Q)$ is the tokenized and lemmatized set of terms in Question $Q$. If $J(Q_A, Q_B) \ge 0.70$, the candidate question is rejected and regenerated.
+
+### 4. Database-Authoritative Ranking Algorithm
+Candidate rankings are computed using standard competitive ranking with deterministic tie-breaking:
+
+$$\text{Rank}(u) = 1 + \left| \{ v \in U \mid \text{Score}(v) > \text{Score}(u) \lor (\text{Score}(v) = \text{Score}(u) \land \text{Duration}(v) < \text{Duration}(u)) \} \right|$$
 
 ---
 
@@ -110,6 +164,7 @@
 2. **Atomic Max Question Enforcement**: Answers are counted under `SELECT ... FOR UPDATE`. When `answers_count >= max_question_count`, the attempt is finalized as `submitted` without serving extra questions.
 3. **Background Sweep Finalization**: Disconnected or expired exams are finalized as `submitted` (`completion_reason = 'time_expired'`), never deleted or left orphaned.
 4. **Student Review Screen Security**: When all questions are answered, the candidate reviews their submission on the attempt review screen with the exam timer running. The exam submits only when the candidate clicks **"Finalize & Submit Exam"** or when the total exam timer reaches `00:00`.
+5. **Strict Cookie & Role Isolation**: Role sessions are separated into isolated cookies with backend validation ensuring tokens issued for student cannot access teacher or admin endpoints.
 
 ---
 
@@ -226,9 +281,9 @@ Open your browser to:
 
 ---
 
-## 🚀 Cloud Deployment on Render
+## 🚀 Cloud Deployment on Render (3 Distinct Portals)
 
-AssessAI is 100% cloud-ready with a native Render Blueprint ([render.yaml](render.yaml)).
+AssessAI is 100% cloud-ready with a native Render Blueprint ([render.yaml](render.yaml)) supporting 3 distinct client portals and a centralized backend:
 
 ### 1-Click Blueprint Deployment
 1. Log in to your [Render Dashboard](https://dashboard.render.com).
@@ -242,7 +297,7 @@ AssessAI is 100% cloud-ready with a native Render Blueprint ([render.yaml](rende
    - 🛡️ **`assessai-admin`** (Static Site with SPA rewrite rules)
 5. Enter any optional AI API keys when prompted and click **Apply**!
 
-For detailed manual instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
+For detailed manual instructions and custom domain setup, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
