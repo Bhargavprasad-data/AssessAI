@@ -52,11 +52,6 @@ export const Register: React.FC = () => {
               />
             </div>
           </div>
-          <div className="mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-brand-500/15 text-brand-600 dark:text-brand-300 border border-brand-500/30">
-              Student Portal (Port 3000)
-            </span>
-          </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight dark:text-white text-slate-900">
             Student Registration
           </h1>
