@@ -1,179 +1,283 @@
-# AI-Based Adaptive Online Assessment and Smart Proctoring System
+# 🧠 AssessAI — AI-Powered Adaptive Online Assessment & Smart Proctoring System
 
-An enterprise-grade, full-stack web application combining AI question generation from uploaded course materials, a real-time difficulty-adaptive assessment engine, smart client-side proctoring telemetry, and database-authoritative ranking.
+<div align="center">
 
----
+![AssessAI Logo](logo.png)
 
-## 1. System Overview & Core Capabilities
+**An enterprise-grade, full-stack adaptive assessment platform with AI question generation, edge-biometric proctoring telemetry, real-time WebSocket monitoring, and database-authoritative ranking.**
 
-The platform operates under three strict role boundaries (**Admin**, **Teacher**, **Student**):
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110.0-009688.svg?style=flat&logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18.3.1-61DAFB.svg?style=flat&logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5.0-3178C6.svg?style=flat&logo=typescript)](https://www.typescriptlang.org/)
+[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC.svg?style=flat&logo=tailwind-css)](https://tailwindcss.com)
+[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-4.17.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/js)
+[![Render](https://img.shields.io/badge/Render-Deployed-46E3B7.svg?style=flat&logo=render)](https://render.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-### 🧑‍💼 Administrator
-- **Role Administration**: Manage platform users with role filters and active/banned status.
-- **Global Platform Bans**: Enforce platform-wide bans that **immediately force-terminate** any active (`in_progress`) or `disconnected` attempts across all assessments with status `TERMINATED` and reason `banned`.
-- **Admin Provisioning**: Administrative accounts can only be created by an authenticated administrator.
-- **Cryptographic Audit Log Trail**: Filterable and immutable ledger recording administrative actions, bans, assessment lifecycle milestones, and question pool mutations.
-
-### 👩‍🏫 Teacher
-- **AI Question Generation**: Upload course material (text-based PDF up to 20MB) $\rightarrow$ AI pipeline extracts text chunks and generates MCQs classified into **Easy**, **Medium**, and **Hard**, each grounded with a `source_chunk_ref`.
-- **Pipeline Reliability**: Multi-provider failover chain (Mock, Anthropic Claude, OpenAI, Ollama) with circuit-breaker cooldown, token-based Jaccard semantic duplicate detection, and a 3-round regeneration shortfall cap. Questions are never auto-published without teacher review.
-- **Assessment Builder**: Configure examination durations, optional per-question time limits, fast-response thresholds, accessibility toggle (`enable_speed_adaptive`), promotion/demotion thresholds, and proctoring violation limits.
-- **Pool Sufficiency Validation**: Interactive modal prevents publishing if the eligible question count is less than `max_question_count`, with explicit override capability and non-blocking difficulty advisories.
-- **Real-Time Live Analytics**: Real-time DB-backed leaderboard via WebSocket (with a 5s polling fallback), live incoming proctoring violation feed with epistemic guardrails, score distribution histogram, accuracy by difficulty, and one-click CSV export.
-- **Assessment-Specific Bans**: Issue or revoke assessment-specific bans preventing targeted students from starting attempts.
-
-### 👨‍🎓 Student
-- **Proctoring Consent**: Epistemic integrity onboarding detailing event monitoring, continuous background timers, and violation thresholds.
-- **Adaptive Examination Session**: Served strictly one question at a time. Difficulty dynamically scales using the Section 6.1 performance matrix:
-  - `CORRECT + FAST` $\rightarrow$ Promotes difficulty (Easy $\rightarrow$ Medium $\rightarrow$ Hard).
-  - `CORRECT + SLOW` or `INCORRECT` $\rightarrow$ Demotes difficulty.
-  - Accessibility mode: When `enable_speed_adaptive = false`, correct answers always promote regardless of response time.
-- **Smart Proctoring Telemetry**: Detects tab switches (`visibilitychange`), window blur, clipboard operations (`copy`, `cut`, `paste`), and best-effort screenshot attempts (`PrintScreen`) with a 2-second client-side debounce. Signals are treated strictly as **environment indicators**, not definitive proof of cheating.
-- **Results Breakdown**: Instant review showing weighted scores, peak difficulty reached, response accuracy, and full question-by-question breakdown.
+</div>
 
 ---
 
-## 2. Architectural Invariants & Guarantees
-
-1. **Atomic 4-Step Question Serving Invariant**:
-   Whenever a question is selected for an attempt:
-   1. Insert record into `attempt_question_servings` with unique `(attempt_id, question_id)` and `(attempt_id, sequence_number)`.
-   2. Update `attempts.current_question_id`.
-   3. Update `attempts.current_question_started_at`.
-   4. Commit all changes atomically.
-   Candidate question selection excludes based on `attempt_question_servings`, guaranteeing that questions served-but-unanswered are never repeated.
-
-2. **Atomic Max Question Count Enforcement**:
-   Inside the `SELECT ... FOR UPDATE` answer submission transaction, answers are counted atomically. When `submitted_answer_count >= assessment.max_question_count`, the attempt moves immediately to `status = SUBMITTED`, `completion_reason = 'max_questions_reached'`, pointers are cleared, the final score is snapshot, and no subsequent question is served.
-
-3. **Synchronous Violation Threshold & Atomic Assessment Ban**:
-   Upon reaching `violation_count >= assessment.max_violations`, the attempt is synchronously terminated (`status = TERMINATED`, `completion_reason = 'violation_threshold'`) and an assessment-specific ban is atomically created with `banned_by = NULL` and `ban_source = 'system_violation_threshold'`.
-
-4. **Background Sweep Invariant**:
-   The background sweep task executes every 60 seconds. Attempts exceeding the assessment time limit or disconnected beyond the grace period are finalized strictly as `SUBMITTED` (`completion_reason = 'time_expired'` or `'disconnect_timeout'`), **NEVER** `TERMINATED`.
-
-5. **Soft-Delete Integrity**:
-   Questions referenced in historical assessments or attempts are soft-deleted via `retired_at` and never hard-deleted. Assessments with existing attempts cannot be deleted.
+## 📑 Table of Contents
+1. [Key Features & Capabilities](#-key-features--capabilities)
+2. [Role Portals Overview](#-role-portals-overview)
+3. [Architecture & System Invariants](#-architecture--system-invariants)
+4. [Technology Stack](#-technology-stack)
+5. [Project Directory Structure](#-project-directory-structure)
+6. [Local Quickstart & Installation](#-local-quickstart--installation)
+7. [Cloud Deployment on Render](#-cloud-deployment-on-render)
+8. [Demo Credentials](#-demo-credentials)
+9. [Automated Test Suite](#-automated-test-suite)
 
 ---
 
-## 3. Tech Stack
+## 🌟 Key Features & Capabilities
 
-- **Backend**: Python 3.11, FastAPI, SQLAlchemy 2.0 (asyncio), asyncpg (PostgreSQL) / aiosqlite, Alembic migrations, Pydantic v2, PyJWT, bcrypt.
+### 🤖 Multi-Provider AI Question Generator
+- **PDF Syllabus Ingestion**: Upload course material PDFs (up to 20MB); the backend extracts text chunks, computes semantic embeddings, and creates context-grounded MCQs.
+- **Dynamic 3-Tier Difficulty**: Questions are classified into **Easy**, **Medium**, and **Hard** with explanatory rationales and `source_chunk_ref` traceability.
+- **Multi-Cloud AI Provider Chain**:
+  - `Google Gemini` (`gemini-1.5-flash` / `gemini-1.5-pro`)
+  - `Anthropic Claude` (`claude-3-5-sonnet`)
+  - `OpenAI` (`gpt-4o-mini` / `gpt-4o`)
+  - `Ollama` (Local self-hosted models like `llama3`)
+  - `Smart NLP Local Extractor` (Offline zero-dependency fallback)
+- **Circuit Breaker & Deduplication**: Token-based Jaccard similarity prevents duplicate questions, and circuit breakers handle rate limits with a 3-round regeneration shortfall cap.
+
+### 🎯 Real-Time Difficulty-Adaptive Engine
+- Dynamically scales difficulty question-by-question based on the candidate's live performance:
+  - **`CORRECT + FAST`**: Increments promotion counter $\rightarrow$ elevates difficulty (`Easy` $\rightarrow$ `Medium` $\rightarrow$ `Hard`).
+  - **`CORRECT + SLOW` / `INCORRECT` / `TIMEOUT`**: Increments demotion counter $\rightarrow$ adjusts to lower difficulty.
+- **Accessibility Mode (`enable_speed_adaptive = false`)**: Disables speed pressure, promoting candidates based solely on correctness.
+
+### 🛡️ Edge-Biometric Smart Proctoring
+- **Client-Side AI Object Detection**: Powered by TensorFlow.js and COCO-SSD running directly on WebGL (120ms inference loop):
+  - 📱 **Mobile Phone & Unauthorized Device Detection** (Instant detection with zero false positives for laptop keyboards/mice).
+  - 📚 **Study Materials & Books Detection**.
+  - 👥 **Multiple Faces Detection** (Flags when extra persons enter the frame).
+  - 👤 **No Face Detection** (Flags when candidate leaves the camera view).
+  - 👀 **Gaze & Head Pose Deviation** (Flags when candidate looks away from the screen).
+- **Audio Telemetry & Noise Analysis**: Real-time microphone audio VU level analyzer detecting suspicious background chatter.
+- **Browser Lock & Environment Monitoring**:
+  - Fullscreen enforcement with auto-exit warnings.
+  - Tab switch (`visibilitychange`) & window blur monitoring.
+  - Clipboard guard blocking copy, cut, and paste events.
+- **Voice Warnings**: Spoken synthesized voice audio alerts prompting candidate compliance.
+- **Discrete Incident State-Machine**: Physical appearances count as exactly 1 strike per incident rather than firing repeatedly while in frame.
+
+### 👨‍🏫 Instructor Control & Live Telemetry
+- **Live Leaderboard & Violation Stream**: Real-time DB-backed leaderboard and violation telemetry via WebSockets with a 5-second polling fallback.
+- **Instant Revoke / Reinstatement**: Teachers can unban or revoke a violation-terminated candidate with one click; the student's exam screen **automatically resumes immediately**.
+- **Assessment Analytics & CSV Export**: Detailed score distribution histogram, difficulty accuracy matrix, and 1-click authenticated CSV download.
+
+---
+
+## 👥 Role Portals Overview
+
+| Portal | Port (Local) | Features |
+| :--- | :--- | :--- |
+| **🎓 Student Portal** | `http://localhost:3000` | Hardware setup check, proctoring consent, adaptive question runner, live proctoring HUD, and full attempt review. |
+| **👩‍🏫 Teacher Portal** | `http://localhost:3001` | PDF material uploader, AI MCQ generator, assessment configurator, live candidate monitoring, and revoke/unban controls. |
+| **🧑‍💼 Admin Portal** | `http://localhost:3002` | User role management, platform-wide global suspension, system health monitoring, and cryptographic audit log trails. |
+| **⚡ Backend API** | `http://127.0.0.1:8000` | FastAPI application, async database engine, Swagger documentation (`/docs`), and WebSocket live hub. |
+
+---
+
+## 🏛️ Architecture & System Invariants
+
+```
+               ┌─────────────────────────────────────────┐
+               │         FastAPI Backend (Port 8000)     │
+               │  • Auth & Role Isolation (JWT + CSRF)   │
+               │  • Adaptive Progression Engine          │
+               │  • AI Provider Chain (Gemini/Claude)    │
+               │  • Background Sweep & Auto-Finalizer    │
+               └────▲─────────────────▲────────────────▲─┘
+                    │                 │                │
+            WebSocket / REST   WebSocket / REST  WebSocket / REST
+                    │                 │                │
+      ┌─────────────┴───┐     ┌───────┴───────┐   ┌────┴────────────┐
+      │  Student Portal │     │Teacher Portal │   │  Admin Portal   │
+      │   (Port 3000)   │     │  (Port 3001)  │   │   (Port 3002)   │
+      │ • TF.js Object  │     │ • AI Generator│   │ • User Roles    │
+      │   Detection     │     │ • Live Monitor│   │ • Global Bans   │
+      │ • Audio VU Meter│     │ • CSV Export  │   │ • Audit Logs    │
+      └─────────────────┘     └───────────────┘   └─────────────────┘
+```
+
+### Critical Invariants
+1. **Atomic 4-Step Question Serving**: Questions are selected and recorded in `attempt_question_servings` with unique `(attempt_id, question_id)` in a single transaction. Served-but-unanswered questions are never repeated.
+2. **Atomic Max Question Enforcement**: Answers are counted under `SELECT ... FOR UPDATE`. When `answers_count >= max_question_count`, the attempt is finalized as `submitted` without serving extra questions.
+3. **Background Sweep Finalization**: Disconnected or expired exams are finalized as `submitted` (`completion_reason = 'time_expired'`), never deleted or left orphaned.
+4. **Student Review Screen Security**: When all questions are answered, the candidate reviews their submission on the attempt review screen with the exam timer running. The exam submits only when the candidate clicks **"Finalize & Submit Exam"** or when the total exam timer reaches `00:00`.
+
+---
+
+## 💻 Technology Stack
+
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 (asyncio), asyncpg (PostgreSQL) / aiosqlite (SQLite), Alembic, Pydantic v2, PyJWT, bcrypt, Uvicorn.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS 3.4, `@tanstack/react-query`, `react-router-dom`, `lucide-react`.
-- **Database**: PostgreSQL (Production) / SQLite (Local dev file `proctor_dev.db`).
-- **Real-Time**: Native WebSockets with auto-reconnect and 5-second HTTP polling fallback.
+- **AI & Computer Vision**: TensorFlow.js (`@tensorflow/tfjs`), COCO-SSD (`@tensorflow-models/coco-ssd`), Google Gemini API, Anthropic Claude API, OpenAI API, Ollama.
+- **Database**: PostgreSQL (Production) / SQLite (Local development file `proctor_dev.db`).
+- **DevOps**: Docker, Docker Compose, Render Blueprint (`render.yaml`).
 
 ---
 
-## 4. Quickstart Guide
+## 📂 Project Directory Structure
+
+```
+Smart-Proctoring-System/
+├── backend/                  # FastAPI Python Application
+│   ├── app/
+│   │   ├── ai/               # AI Generator, Providers (Gemini, Claude, OpenAI, Mock)
+│   │   ├── api/              # Role Routers (Auth, Student, Teacher, Admin, Proctoring, WebSockets)
+│   │   ├── core/             # Security, JWT, Rate Limiting, CSRF Protection
+│   │   ├── models/           # SQLAlchemy Declarative Models
+│   │   ├── schemas/          # Pydantic Request/Response Schemas
+│   │   ├── services/         # Adaptive Engine, PDF Extractor, Proctoring Service, Sweeps
+│   │   └── main.py           # Application Entrypoint & CORS Configuration
+│   ├── alembic/              # Database Schema Migrations
+│   ├── seed_demo.py          # Demo Database Seeder Script
+│   └── requirements.txt      # Python Dependencies
+├── student/                  # Student Portal (React + Vite + TypeScript)
+│   ├── src/
+│   │   ├── components/       # ProctoringMediaWidget, Badge, Modal, ThemeToggle
+│   │   ├── hooks/            # useCameraDetection, useExamTimer, useProctoring
+│   │   └── pages/            # ExamSession, ExamResults, StudentDashboard, Login
+├── teacher/                  # Teacher Portal (React + Vite + TypeScript)
+│   ├── src/
+│   │   ├── hooks/            # useLeaderboard (WebSocket + Polling)
+│   │   └── pages/            # AssessmentBuilder, AssessmentAnalytics, TeacherDashboard
+├── admin/                    # Admin Portal (React + Vite + TypeScript)
+│   ├── src/
+│   │   └── pages/            # AdminDashboard, AuditLogViewer, Login
+├── docker-compose.yml        # Multi-container Docker Configuration
+├── render.yaml               # Render Infrastructure-as-Code Blueprint
+├── DEPLOYMENT.md             # Complete Deployment Guide
+├── build-static.js           # Multi-portal Static Site Builder
+└── package.json              # Root Orchestration Scripts
+```
+
+---
+
+## ⚡ Local Quickstart & Installation
 
 ### Prerequisites
-- Python 3.11+
-- Node.js 18+ and npm
-- (Optional) Docker & Docker Compose for PostgreSQL production container
+- **Node.js**: v18.0.0 or higher
+- **Python**: v3.11 or higher
+- **Git**
 
-### 1. Backend Setup
-
+### 1. Clone the Repository
 ```bash
-# Navigate to backend directory
+git clone https://github.com/Bhargavprasad-data/AssessAI.git
+cd AssessAI
+```
+
+### 2. Configure Environment Variables
+Copy the example environment file:
+```bash
+cp .env.example .env
+```
+*(Optional)* Add your `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` in `.env`. If left blank, the system automatically uses the intelligent local NLP fallback.
+
+### 3. Backend Setup
+```bash
 cd backend
 
-# Create and activate virtual environment
+# Create virtual environment
 python -m venv venv
-# On Windows:
-venv\Scripts\activate
-# On Linux/macOS:
+
+# Activate virtual environment
+# Windows (PowerShell):
+.\venv\Scripts\Activate.ps1
+# Linux / macOS:
 source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run database migrations
+# Run migrations & seed demo data
 alembic upgrade head
-
-# Seed initial demo data (Admin, Teacher, 5 Students, Assessment & Attempts)
 python seed_demo.py
 
-# Start the FastAPI server
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd ..
 ```
 
-### 2. Frontend Setup
-
+### 4. Install Frontend Dependencies
 ```bash
-# Open a new terminal in the frontend directory
-cd frontend
-
-# Install npm dependencies
+# Install root, student, teacher, and admin dependencies
 npm install
-
-# Start role-specific portals
-npm run dev:student   # Student Portal on http://localhost:3000
-npm run dev:teacher   # Teacher Portal on http://localhost:3001
-npm run dev:admin     # Admin Portal on http://localhost:3002
-
-# Or build for production
-npm run build
+npm --prefix student install
+npm --prefix teacher install
+npm --prefix admin install
 ```
 
-### 3. Unified Startup (All Portals in One Command)
-
-From the **root repository folder**, you can boot the entire stack concurrently:
+### 5. Launch All Services (One Command)
+From the root directory:
 ```bash
 npm run dev
 ```
 
-| Portal / Service | Port / URL | Purpose |
-| :--- | :--- | :--- |
-| **👨‍🎓 Student Portal** | **`http://localhost:3000`** | Exam onboarding, full-screen adaptive exams, results |
-| **👩‍🏫 Teacher Portal** | **`http://localhost:3001`** | Material uploads, AI generation, live proctoring telemetry |
-| **🧑‍💼 Admin Portal** | **`http://localhost:3002`** | User management, global bans, audit logs |
-| **🚀 Backend API** | **`http://127.0.0.1:8000`** | FastAPI endpoints & Interactive Swagger Docs (`/docs`) |
+Open your browser to:
+- 🎓 **Student Portal**: [http://localhost:3000](http://localhost:3000)
+- 👨‍🏫 **Teacher Portal**: [http://localhost:3001](http://localhost:3001)
+- 🛡️ **Admin Portal**: [http://localhost:3002](http://localhost:3002)
+- ⚡ **Backend Swagger API**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
-## 5. Pre-Configured Demo Credentials
+## 🚀 Cloud Deployment on Render
 
-The database seed script (`seed_demo.py`) creates the following accounts:
+AssessAI is 100% cloud-ready with a native Render Blueprint ([render.yaml](render.yaml)).
+
+### 1-Click Blueprint Deployment
+1. Log in to your [Render Dashboard](https://dashboard.render.com).
+2. Click **New +** $\rightarrow$ **Blueprint**.
+3. Connect your GitHub repository: `https://github.com/Bhargavprasad-data/AssessAI.git`.
+4. Render will automatically provision:
+   - 🗄️ **`assessai-postgres`** (Managed PostgreSQL Database)
+   - ⚡ **`assessai-backend`** (Python FastAPI Web Service)
+   - 🎓 **`assessai-student`** (Static Site with SPA rewrite rules)
+   - 👨‍🏫 **`assessai-teacher`** (Static Site with SPA rewrite rules)
+   - 🛡️ **`assessai-admin`** (Static Site with SPA rewrite rules)
+5. Enter any optional AI API keys when prompted and click **Apply**!
+
+For detailed manual instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+---
+
+## 🔑 Demo Credentials
+
+The database seeder (`seed_demo.py`) initializes the following test accounts:
 
 | Role | Email | Password | Description |
 | :--- | :--- | :--- | :--- |
-| **Primary Admin** | `bhargavvana80@gmail.com` | `Bhargav11@prasad` | Primary Administrator with full platform controls |
-| **Admin** | `admin@proctor.ai` | `AdminPass123!` | System Administrator with user management and audit log access |
-| **Teacher** | `teacher@proctor.ai` | `TeacherPass123!` | Teacher with uploaded materials, AI generation, and assessment analytics |
+| **Administrator** | `bhargavvana80@gmail.com` | `Bhargav11@prasad` | Platform Admin (Full control, Audit Logs, Global Bans) |
+| **Teacher** | `teacher@proctor.ai` | `TeacherPass123!` | Instructor (Assessment Builder, AI MCQ Generator, Analytics) |
 | **Student 1** | `student1@proctor.ai` | `StudentPass123!` | Completed attempt (Score: 16.0, Hard reached) |
-| **Student 2** | `student2@proctor.ai` | `StudentPass123!` | Completed attempt (Score: 13.0, Medium reached) |
-| **Student 3** | `student3@proctor.ai` | `StudentPass123!` | Completed attempt (Score: 9.0, Medium reached) |
-| **Student 4** | `student4@proctor.ai` | `StudentPass123!` | Terminated attempt due to violation threshold (Assessment Banned) |
-| **Student 5** | `student5@proctor.ai` | `StudentPass123!` | Ready to take the assessment |
+| **Student 2** | `student2@proctor.ai` | `StudentPass123!` | Ready to take the assessment |
 
 ---
 
-## 6. Running the Automated Test Suite
+## 🧪 Automated Test Suite
 
-The test suite covers the adaptive matrix, AI provider chain and regeneration cap, database constraints, serving invariant, atomic max question count enforcement, proctoring violation debounce/threshold bans, and background sweep:
+Run the full backend test suite to verify adaptive engine logic, proctoring debouncing, AI provider failover chains, and serving invariants:
 
 ```bash
 cd backend
-venv\Scripts\pytest -v
+pytest -v
 ```
 
-**Test Coverage Summary (18/18 Passing)**:
-- `test_adaptive_engine.py`: Fast/slow computation, Section 6.1 difficulty transitions, boundary capping, and accessibility mode override.
-- `test_ai_providers.py`: Mock provider validation, chain transient failover, permanent error fast-skip, all-down reporting, 3-round regeneration shortfall cap, and semantic duplicate detection.
-- `test_auth_security.py`: Client-role registration protection and global ban force-termination.
-- `test_database_constraints.py`: Duplicate assessment questions prevention (`PRIMARY KEY (assessment_id, question_id)`) and serving dual uniqueness.
-- `test_max_question_enforcement.py`: Atomic `max_question_count` enforcement with `completion_reason = 'max_questions_reached'`.
-- `test_proctoring_and_bans.py`: 2-second debounce and synchronous violation threshold termination with atomic assessment ban.
-- `test_serving_invariant.py`: 4-step serving record creation and candidate exclusion via `attempt_question_servings`.
-- `test_sweep.py`: Background sweep finalizes expired attempts as `SUBMITTED`, never `TERMINATED`.
+### Test Suite Highlights:
+- `test_adaptive_engine.py`: Fast/slow computation, Section 6.1 difficulty transitions, boundary capping.
+- `test_ai_providers.py`: Multi-provider failover chain, circuit breaker cooldown, Jaccard semantic deduplication.
+- `test_auth_security.py`: Role isolation across portals, CSRF tokens, and global platform ban force-termination.
+- `test_database_constraints.py`: Unique constraints on serving sequence numbers and assessment question mappings.
+- `test_max_question_enforcement.py`: Atomic `max_question_count` enforcement.
+- `test_proctoring_and_bans.py`: 2.0-second debounce and synchronous violation threshold termination with atomic assessment ban.
+- `test_sweep.py`: Background sweep finalizes expired attempts cleanly as `submitted`.
 
 ---
 
-## 7. WebSocket Scaling Architecture (Section 8.7)
-
-The application implements an authoritative database broadcast pattern:
-- **Current Node**: In-memory connection manager (`ConnectionManager`) tracks active WebSocket subscribers per assessment.
-- **Authoritative Source**: Scores, rankings, and violations are always calculated server-side from PostgreSQL/SQLite and pushed to subscribers upon mutation.
-- **Horizontal Scaling**: To scale across multiple uvicorn worker processes or cluster nodes, the manager supports a Redis Pub/Sub adapter (`REDIS_URL`) where leaderboard and violation events are broadcast across instances, while clients without WebSocket connectivity fall back automatically to 5-second polling.
+## 📄 License
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
