@@ -149,6 +149,13 @@ export async function apiFetch<T>(
   }
 
   const rawText = await response.text();
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const isHtml = contentType.includes('text/html') || (rawText && rawText.trim().startsWith('<'));
+
+  if (isHtml) {
+    throw new Error(`API endpoint ${url} returned an HTML document instead of JSON. Ensure the backend server is running on port 8000.`);
+  }
+
   let parsedData: any = null;
   if (rawText && rawText.trim()) {
     try {

@@ -63,8 +63,12 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db():
     import app.models  # noqa: F401
-    from sqlalchemy import text, inspect
+    from sqlalchemy import text, inspect, select
     import logging
+    import uuid
+    from datetime import datetime, timezone
+    from app.models.user import User
+    from app.core.security import get_password_hash
     logger = logging.getLogger(__name__)
 
     async with engine.begin() as conn:
@@ -86,4 +90,48 @@ async def init_db():
                                 logger.warning(f"Could not auto-add column {col.name} to {table_name}: {e}")
 
         await conn.run_sync(sync_missing_columns)
+
+    # Ensure authoritative admin accounts exist and credentials are valid
+    async with AsyncSessionLocal() as session:
+        try:
+            now = datetime.now(timezone.utc)
+            admin1 = await session.scalar(select(User).where(User.email == "bhargavvana80@gmail.com"))
+            if not admin1:
+                admin1 = User(
+                    id=uuid.uuid4(),
+                    name="Bhargav Admin",
+                    email="bhargavvana80@gmail.com",
+                    password_hash=get_password_hash("Bhargav11@prasad"),
+                    role="admin",
+                    is_banned=False,
+                    created_at=now
+                )
+                session.add(admin1)
+                logger.info("Initialized default primary admin: bhargavvana80@gmail.com")
+            else:
+                admin1.password_hash = get_password_hash("Bhargav11@prasad")
+                admin1.role = "admin"
+                admin1.is_banned = False
+
+            admin2 = await session.scalar(select(User).where(User.email == "admin@proctor.ai"))
+            if not admin2:
+                admin2 = User(
+                    id=uuid.uuid4(),
+                    name="Dr. System Administrator",
+                    email="admin@proctor.ai",
+                    password_hash=get_password_hash("AdminDemo2026!"),
+                    role="admin",
+                    is_banned=False,
+                    created_at=now
+                )
+                session.add(admin2)
+                logger.info("Initialized default demo admin: admin@proctor.ai")
+            else:
+                admin2.role = "admin"
+                admin2.is_banned = False
+
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.warning(f"Auto-seeding default admin accounts encountered error: {e}")
 

@@ -22,7 +22,46 @@ const MIME_TYPES = {
   '.ttf': 'font/ttf',
 };
 
+const BACKEND_URL = (process.env.BACKEND_URL || process.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+
 const server = http.createServer((req, res) => {
+  // Reverse proxy /api requests to backend
+  if (req.url.startsWith('/api/') || req.url === '/api' || req.url.startsWith('/ws')) {
+    try {
+      const backendTarget = new URL(req.url, BACKEND_URL);
+      const isHttps = backendTarget.protocol === 'https:';
+      const clientLib = isHttps ? require('https') : http;
+
+      const proxyReq = clientLib.request({
+        protocol: backendTarget.protocol,
+        hostname: backendTarget.hostname,
+        port: backendTarget.port || (isHttps ? 443 : 80),
+        path: backendTarget.pathname + backendTarget.search,
+        method: req.method,
+        headers: {
+          ...req.headers,
+          host: backendTarget.host,
+        },
+      }, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res, { end: true });
+      });
+
+      proxyReq.on('error', (err) => {
+        console.error('[proxy error]', err.message);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ detail: 'Backend server is not reachable on ' + BACKEND_URL }));
+        }
+      });
+
+      req.pipe(proxyReq, { end: true });
+      return;
+    } catch (proxyErr) {
+      console.error('[proxy parse error]', proxyErr);
+    }
+  }
+
   const urlPath = req.url.split('?')[0];
   let safePath = path.normalize(urlPath).replace(/^(\.\.[\/\\])+/, '');
   let filePath = path.join(PUBLIC_DIR, safePath);
