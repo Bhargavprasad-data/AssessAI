@@ -1443,6 +1443,14 @@ async def revoke_assessment_ban(
         latest_attempt.submitted_at = None
         latest_attempt.last_heartbeat_at = now
 
+        # If exam time elapsed while banned/terminated, refresh started_at so student has time to complete
+        if latest_attempt.started_at:
+            started = latest_attempt.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if (now - started).total_seconds() >= assessment.time_limit_seconds:
+                latest_attempt.started_at = now
+
         # Reset terminal violations so student gets fresh strikes
         await db.execute(
             delete(Violation).where(
@@ -1452,26 +1460,43 @@ async def revoke_assessment_ban(
 
         # Ensure a valid current question is active
         if not latest_attempt.current_question_id:
-            next_q = await select_next_adaptive_question(
-                session=db,
-                attempt=latest_attempt,
-                assessment=assessment,
-                target_difficulty="easy"
-            )
-            if next_q:
-                answers_count = await db.scalar(
-                    select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == latest_attempt.id)
-                ) or 0
-                serving = AttemptQuestionServing(
-                    id=uuid.uuid4(),
-                    attempt_id=latest_attempt.id,
-                    question_id=next_q.id,
-                    served_at=now,
-                    sequence_number=answers_count + 1
+            # Check for existing unanswered serving first
+            stmt_unanswered = (
+                select(AttemptQuestionServing)
+                .where(
+                    AttemptQuestionServing.attempt_id == latest_attempt.id,
+                    AttemptQuestionServing.question_id.not_in(
+                        select(AttemptAnswer.question_id).where(AttemptAnswer.attempt_id == latest_attempt.id)
+                    )
                 )
-                db.add(serving)
-                latest_attempt.current_question_id = next_q.id
+                .order_by(AttemptQuestionServing.sequence_number.desc())
+                .limit(1)
+            )
+            unanswered_serving = (await db.execute(stmt_unanswered)).scalar_one_or_none()
+            if unanswered_serving:
+                latest_attempt.current_question_id = unanswered_serving.question_id
                 latest_attempt.current_question_started_at = now
+            else:
+                next_q = await select_next_adaptive_question(
+                    session=db,
+                    attempt=latest_attempt,
+                    assessment=assessment,
+                    target_difficulty="easy"
+                )
+                if next_q:
+                    answers_count = await db.scalar(
+                        select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == latest_attempt.id)
+                    ) or 0
+                    serving = AttemptQuestionServing(
+                        id=uuid.uuid4(),
+                        attempt_id=latest_attempt.id,
+                        question_id=next_q.id,
+                        served_at=now,
+                        sequence_number=answers_count + 1
+                    )
+                    db.add(serving)
+                    latest_attempt.current_question_id = next_q.id
+                    latest_attempt.current_question_started_at = now
 
     await db.commit()
 
@@ -1540,6 +1565,14 @@ async def reinstate_assessment_attempt(
     attempt.submitted_at = None
     attempt.last_heartbeat_at = now
 
+    # If exam time elapsed while banned/terminated, refresh started_at so student has time to complete
+    if attempt.started_at:
+        started = attempt.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if (now - started).total_seconds() >= assessment.time_limit_seconds:
+            attempt.started_at = now
+
     # Reset violations for this attempt
     await db.execute(
         delete(Violation).where(
@@ -1549,26 +1582,42 @@ async def reinstate_assessment_attempt(
 
     # 3. Ensure a valid active question is assigned
     if not attempt.current_question_id:
-        next_q = await select_next_adaptive_question(
-            session=db,
-            attempt=attempt,
-            assessment=assessment,
-            target_difficulty="easy"
-        )
-        if next_q:
-            answers_count = await db.scalar(
-                select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == attempt.id)
-            ) or 0
-            serving = AttemptQuestionServing(
-                id=uuid.uuid4(),
-                attempt_id=attempt.id,
-                question_id=next_q.id,
-                served_at=now,
-                sequence_number=answers_count + 1
+        stmt_unanswered = (
+            select(AttemptQuestionServing)
+            .where(
+                AttemptQuestionServing.attempt_id == attempt.id,
+                AttemptQuestionServing.question_id.not_in(
+                    select(AttemptAnswer.question_id).where(AttemptAnswer.attempt_id == attempt.id)
+                )
             )
-            db.add(serving)
-            attempt.current_question_id = next_q.id
+            .order_by(AttemptQuestionServing.sequence_number.desc())
+            .limit(1)
+        )
+        unanswered_serving = (await db.execute(stmt_unanswered)).scalar_one_or_none()
+        if unanswered_serving:
+            attempt.current_question_id = unanswered_serving.question_id
             attempt.current_question_started_at = now
+        else:
+            next_q = await select_next_adaptive_question(
+                session=db,
+                attempt=attempt,
+                assessment=assessment,
+                target_difficulty="easy"
+            )
+            if next_q:
+                answers_count = await db.scalar(
+                    select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == attempt.id)
+                ) or 0
+                serving = AttemptQuestionServing(
+                    id=uuid.uuid4(),
+                    attempt_id=attempt.id,
+                    question_id=next_q.id,
+                    served_at=now,
+                    sequence_number=answers_count + 1
+                )
+                db.add(serving)
+                attempt.current_question_id = next_q.id
+                attempt.current_question_started_at = now
 
     await db.commit()
 
@@ -1578,10 +1627,10 @@ async def reinstate_assessment_attempt(
         violation_payload={
             "attempt_id": str(attempt.id),
             "student_id": str(attempt.student_id),
-            "type": "ban_revoked",
+            "type": "attempt_reinstated",
             "is_reinstated": True,
             "is_terminated": False,
-            "message": "Instructor has reinstated your exam attempt. You can now continue writing your exam."
+            "message": "Instructor has reinstated your attempt. You can now continue your exam."
         }
     )
 

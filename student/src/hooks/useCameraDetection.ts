@@ -36,12 +36,15 @@ export function useCameraDetection({
 
   // Discrete Incident State Machine Refs (Each physical appearance counts as exactly 1 strike)
   const phoneIncidentActiveRef = useRef<boolean>(false);
+  const phoneConsecutiveFramesRef = useRef<number>(0);
   const phoneAbsentConsecutiveRef = useRef<number>(0);
 
   const bookIncidentActiveRef = useRef<boolean>(false);
+  const bookConsecutiveFramesRef = useRef<number>(0);
   const bookAbsentConsecutiveRef = useRef<number>(0);
 
   const multipleFacesIncidentActiveRef = useRef<boolean>(false);
+  const multipleFacesConsecutiveFramesRef = useRef<number>(0);
   const multipleFacesNormalConsecutiveRef = useRef<number>(0);
 
   const noFaceIncidentActiveRef = useRef<boolean>(false);
@@ -136,8 +139,8 @@ export function useCameraDetection({
   const triggerViolation = useCallback((type: string, metadata: Record<string, any>, spokenText?: string) => {
     const now = Date.now();
     const lastTime = lastViolationTimeRef.current[type] || 0;
-    // 1.5s minimal safety threshold between repeated events of same type
-    if (now - lastTime < 1500) {
+    // 6-second safety cooldown between repeated strikes of the same violation type
+    if (now - lastTime < 6000) {
       return;
     }
     lastViolationTimeRef.current[type] = now;
@@ -167,7 +170,7 @@ export function useCameraDetection({
       if (!isRunning) return;
 
       const now = Date.now();
-      // Run inference every 120ms for instant mobile detection with low CPU overhead
+      // Run inference every 120ms
       if (now - lastInferenceTimeRef.current >= 120 && !isDetectingRef.current) {
         const liveVideo = (document.getElementById('proctoring-live-video') as HTMLVideoElement) || hiddenVideoRef.current;
         const model = modelRef.current;
@@ -178,7 +181,7 @@ export function useCameraDetection({
 
           try {
             // High-speed direct WebGL tensor detection directly from video element
-            const predictions = await model.detect(liveVideo, 20, 0.15);
+            const predictions = await model.detect(liveVideo, 15, 0.30);
 
             const validDetections: DetectedItem[] = predictions.map((p) => ({
               class: p.class.toLowerCase(),
@@ -192,42 +195,50 @@ export function useCameraDetection({
             const h = liveVideo.videoHeight || 480;
 
             // -------------------------------------------------------------
-            // A. MOBILE PHONE DETECTION (Strictly targeted at cell phones & handheld devices)
-            // Note: Does NOT flag laptop, keyboard, mouse, or background monitors
+            // A. MOBILE PHONE DETECTION (Strictly targeted at confirmed cell phones)
+            // Filters out false positives (hands, pens, remotes, ambient shadows)
             // -------------------------------------------------------------
             const phoneDetection = validDetections.find((d) => {
               const c = d.class.toLowerCase();
               if (c === 'cell phone' || c === 'telephone') {
-                return d.score >= 0.22;
-              }
-              if (c === 'remote') {
-                return d.score >= 0.38;
+                const [, , bw, bh] = d.bbox;
+                const bboxArea = bw * bh;
+                const totalArea = w * h;
+                // Verify high confidence (>= 0.65) and realistic physical proportions
+                const isPlausibleSize = bboxArea > 400 && bboxArea < (totalArea * 0.85);
+                return d.score >= 0.65 && isPlausibleSize;
               }
               return false;
             });
 
             if (phoneDetection) {
-              setMobileWarningActive(true);
+              phoneConsecutiveFramesRef.current += 1;
               phoneAbsentConsecutiveRef.current = 0;
 
-              // If newly detected in this physical appearance, trigger exactly 1 strike
-              if (!phoneIncidentActiveRef.current) {
-                phoneIncidentActiveRef.current = true;
-                triggerViolation(
-                  'mobile_detected',
-                  {
-                    object: 'Mobile Phone',
-                    detected_class: phoneDetection.class,
-                    confidence: Math.round(phoneDetection.score * 100),
-                    bbox: phoneDetection.bbox,
-                  },
-                  'Warning: Mobile phone detected. Close your mobile and please write your exam.'
-                );
+              // Require sustained presence over 6 consecutive frames (~750ms) to avoid transient flickers
+              if (phoneConsecutiveFramesRef.current >= 6) {
+                setMobileWarningActive(true);
+
+                // If newly detected in this physical appearance, trigger exactly 1 strike
+                if (!phoneIncidentActiveRef.current) {
+                  phoneIncidentActiveRef.current = true;
+                  triggerViolation(
+                    'mobile_detected',
+                    {
+                      object: 'Mobile Phone',
+                      detected_class: phoneDetection.class,
+                      confidence: Math.round(phoneDetection.score * 100),
+                      bbox: phoneDetection.bbox,
+                    },
+                    'Warning: Mobile phone detected. Close your mobile and please write your exam.'
+                  );
+                }
               }
             } else {
+              phoneConsecutiveFramesRef.current = 0;
               phoneAbsentConsecutiveRef.current += 1;
-              // Reset incident after 4 consecutive clean frames (~500ms)
-              if (phoneAbsentConsecutiveRef.current >= 4) {
+              // Reset incident only after 25 consecutive clean frames (~3 seconds of sustained absence)
+              if (phoneAbsentConsecutiveRef.current >= 25) {
                 setMobileWarningActive(false);
                 phoneIncidentActiveRef.current = false;
               }
@@ -238,12 +249,13 @@ export function useCameraDetection({
             // -------------------------------------------------------------
             const bookDetection = validDetections.find((d) => {
               const c = d.class.toLowerCase();
-              return (c === 'book' || c === 'backpack') && d.score >= 0.30;
+              return c === 'book' && d.score >= 0.65;
             });
 
             if (bookDetection && !phoneDetection) {
+              bookConsecutiveFramesRef.current += 1;
               bookAbsentConsecutiveRef.current = 0;
-              if (!bookIncidentActiveRef.current) {
+              if (bookConsecutiveFramesRef.current >= 6 && !bookIncidentActiveRef.current) {
                 bookIncidentActiveRef.current = true;
                 triggerViolation(
                   'unauthorized_object',
@@ -256,8 +268,9 @@ export function useCameraDetection({
                 );
               }
             } else {
+              bookConsecutiveFramesRef.current = 0;
               bookAbsentConsecutiveRef.current += 1;
-              if (bookAbsentConsecutiveRef.current >= 5) {
+              if (bookAbsentConsecutiveRef.current >= 25) {
                 bookIncidentActiveRef.current = false;
               }
             }
@@ -265,12 +278,13 @@ export function useCameraDetection({
             // -------------------------------------------------------------
             // C. PERSONS / MULTIPLE FACES / NO FACE
             // -------------------------------------------------------------
-            const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.30);
+            const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.55);
 
             // Multiple persons in camera view
             if (persons.length > 1) {
+              multipleFacesConsecutiveFramesRef.current += 1;
               multipleFacesNormalConsecutiveRef.current = 0;
-              if (!multipleFacesIncidentActiveRef.current) {
+              if (multipleFacesConsecutiveFramesRef.current >= 6 && !multipleFacesIncidentActiveRef.current) {
                 multipleFacesIncidentActiveRef.current = true;
                 triggerViolation(
                   'multiple_faces',
@@ -284,8 +298,9 @@ export function useCameraDetection({
               noFaceConsecutiveFramesRef.current = 0;
               lookingAwayConsecutiveFramesRef.current = 0;
             } else {
+              multipleFacesConsecutiveFramesRef.current = 0;
               multipleFacesNormalConsecutiveRef.current += 1;
-              if (multipleFacesNormalConsecutiveRef.current >= 5) {
+              if (multipleFacesNormalConsecutiveRef.current >= 20) {
                 multipleFacesIncidentActiveRef.current = false;
               }
             }
@@ -296,8 +311,8 @@ export function useCameraDetection({
               noFaceConsecutiveFramesRef.current += 1;
               lookingAwayConsecutiveFramesRef.current = 0;
 
-              // Require 5 consecutive absent frames (~600ms) to prevent single-frame blinks
-              if (noFaceConsecutiveFramesRef.current >= 5 && !noFaceIncidentActiveRef.current) {
+              // Require 12 consecutive absent frames (~1.5s) to prevent single-frame blinks or brief posture shifts
+              if (noFaceConsecutiveFramesRef.current >= 12 && !noFaceIncidentActiveRef.current) {
                 noFaceIncidentActiveRef.current = true;
                 triggerViolation(
                   'no_face',
@@ -308,7 +323,7 @@ export function useCameraDetection({
             } else {
               facePresentConsecutiveRef.current += 1;
               noFaceConsecutiveFramesRef.current = 0;
-              if (facePresentConsecutiveRef.current >= 4) {
+              if (facePresentConsecutiveRef.current >= 8) {
                 noFaceIncidentActiveRef.current = false;
               }
             }
@@ -320,12 +335,12 @@ export function useCameraDetection({
               const centerX = (px + pw / 2) / w;
               const centerY = (py + ph / 2) / h;
 
-              const isLookingAway = centerX < 0.12 || centerX > 0.88 || centerY > 0.90;
+              const isLookingAway = centerX < 0.08 || centerX > 0.92 || centerY > 0.92;
 
               if (isLookingAway) {
                 lookingNormalConsecutiveRef.current = 0;
                 lookingAwayConsecutiveFramesRef.current += 1;
-                if (lookingAwayConsecutiveFramesRef.current >= 6 && !lookingAwayIncidentActiveRef.current) {
+                if (lookingAwayConsecutiveFramesRef.current >= 14 && !lookingAwayIncidentActiveRef.current) {
                   lookingAwayIncidentActiveRef.current = true;
                   triggerViolation(
                     'looking_away',
@@ -339,7 +354,7 @@ export function useCameraDetection({
               } else {
                 lookingNormalConsecutiveRef.current += 1;
                 lookingAwayConsecutiveFramesRef.current = 0;
-                if (lookingNormalConsecutiveRef.current >= 5) {
+                if (lookingNormalConsecutiveRef.current >= 10) {
                   lookingAwayIncidentActiveRef.current = false;
                 }
               }

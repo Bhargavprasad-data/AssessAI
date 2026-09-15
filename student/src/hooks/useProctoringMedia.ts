@@ -365,17 +365,26 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     }
 
     if (cameraStreamRef.current) {
-      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current.getTracks().forEach((track) => {
+        track.onended = null;
+        try { track.stop(); } catch {}
+      });
       cameraStreamRef.current = null;
       setCameraStream(null);
     }
     if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((track) => track.stop());
+      micStreamRef.current.getTracks().forEach((track) => {
+        track.onended = null;
+        try { track.stop(); } catch {}
+      });
       micStreamRef.current = null;
       setMicStream(null);
     }
     if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current.getTracks().forEach((track) => {
+        track.onended = null;
+        try { track.stop(); } catch {}
+      });
       screenStreamRef.current = null;
       setScreenStream(null);
     }

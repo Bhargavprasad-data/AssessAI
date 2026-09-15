@@ -108,11 +108,10 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
   // Find unauthorized objects
   const hasPhone = detectedItems.some((d) => {
     const c = d.class.toLowerCase();
-    if (c === 'cell phone' || c === 'telephone') return d.score >= 0.22;
-    if (c === 'remote') return d.score >= 0.38;
+    if (c === 'cell phone' || c === 'telephone') return d.score >= 0.65;
     return false;
   });
-  const hasBook = detectedItems.some((d) => (d.class === 'book' || d.class === 'backpack') && d.score >= 0.30);
+  const hasBook = detectedItems.some((d) => d.class === 'book' && d.score >= 0.65);
 
   return (
     <div

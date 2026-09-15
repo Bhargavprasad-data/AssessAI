@@ -38,10 +38,7 @@ export const StudentDashboard: React.FC = () => {
 
   const handleAction = (item: AvailableAssessment) => {
     if (item.is_banned) return;
-    if (
-      item.existing_attempt_status === 'submitted' ||
-      item.existing_attempt_status === 'terminated'
-    ) {
+    if (item.existing_attempt_status === 'submitted') {
       if (item.existing_attempt_id) {
         navigate(`/student/attempts/${item.existing_attempt_id}/results`);
       } else {
@@ -110,7 +107,8 @@ export const StudentDashboard: React.FC = () => {
                       <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> COMPLETED
                     </span>
                   ) : a.existing_attempt_status === 'in_progress' ||
-                    a.existing_attempt_status === 'disconnected' ? (
+                    a.existing_attempt_status === 'disconnected' ||
+                    a.existing_attempt_status === 'terminated' ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 animate-pulse">
                       IN PROGRESS
                     </span>
@@ -151,8 +149,7 @@ export const StudentDashboard: React.FC = () => {
                 className={`w-full py-2.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 transition-all ${
                   a.is_banned
                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-200 dark:border-slate-700'
-                    : a.existing_attempt_status === 'submitted' ||
-                      a.existing_attempt_status === 'terminated'
+                    : a.existing_attempt_status === 'submitted'
                     ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10'
                     : 'bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/25'
                 }`}
@@ -160,11 +157,11 @@ export const StudentDashboard: React.FC = () => {
                 <span>
                   {a.is_banned
                     ? 'Access Blocked'
-                    : a.existing_attempt_status === 'submitted' ||
-                      a.existing_attempt_status === 'terminated'
+                    : a.existing_attempt_status === 'submitted'
                     ? 'View Results'
                     : a.existing_attempt_status === 'in_progress' ||
-                      a.existing_attempt_status === 'disconnected'
+                      a.existing_attempt_status === 'disconnected' ||
+                      a.existing_attempt_status === 'terminated'
                     ? 'Resume Assessment'
                     : 'Start Assessment'}
                 </span>

@@ -299,7 +299,11 @@ export const ExamSession: React.FC = () => {
 
         const currentAssessment = assessments.find((a) => a.id === assessmentId);
         if (currentAssessment) {
-          if (currentAssessment.existing_attempt_status === 'in_progress' || currentAssessment.existing_attempt_status === 'disconnected') {
+          if (
+            currentAssessment.existing_attempt_status === 'in_progress' ||
+            currentAssessment.existing_attempt_status === 'disconnected' ||
+            (!currentAssessment.is_banned && currentAssessment.existing_attempt_status === 'terminated')
+          ) {
             setConsentChecked(true);
             try {
               const res = await apiFetch<{
@@ -319,6 +323,7 @@ export const ExamSession: React.FC = () => {
                 setAttemptId(res.attempt_id);
                 setCurrentQuestion(res.current_question);
                 setHasConsented(true);
+                setTerminatedReason(null);
                 enableSimulatedHardware();
               }
             } catch (err: any) {
@@ -386,13 +391,13 @@ export const ExamSession: React.FC = () => {
     } catch (e) {
       console.warn('Error exiting fullscreen on dashboard return:', e);
     }
+    setTerminatedReason(null);
+    setHasConsented(false);
     navigate('/student/dashboard', { replace: true });
-    // Safety fallback: if router transition is blocked, force browser location update
+    // Immediate fallback window navigation to ensure dashboard loads
     setTimeout(() => {
-      if (window.location.pathname.includes('/take')) {
-        window.location.href = '/student/dashboard';
-      }
-    }, 120);
+      window.location.href = '/student/dashboard';
+    }, 50);
   }, [stopAllMedia, navigate]);
 
   const [checkingResume, setCheckingResume] = useState<boolean>(false);
@@ -424,6 +429,7 @@ export const ExamSession: React.FC = () => {
         setCurrentQuestion(res.current_question);
         setHasConsented(true);
         setResumeMessage(null);
+        enableSimulatedHardware();
         await enterFullscreen();
       }
     } catch (err: any) {

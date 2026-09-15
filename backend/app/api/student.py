@@ -107,6 +107,9 @@ async def list_available_assessments(
             if not answers_count or answers_count == 0:
                 existing_status = None
                 existing_id = None
+        elif existing_attempt and existing_attempt.status == "terminated" and ban is None:
+            # Student is unbanned/eligible to resume
+            existing_status = "in_progress"
 
         results.append({
             "id": str(a.id),
@@ -170,6 +173,13 @@ async def join_assessment(
             existing_attempt.status = "in_progress"
             existing_attempt.completion_reason = None
             existing_attempt.submitted_at = None
+            # If exam time elapsed while banned/terminated, refresh started_at so student has time to complete
+            if existing_attempt.started_at:
+                st = existing_attempt.started_at
+                if st.tzinfo is None:
+                    st = st.replace(tzinfo=timezone.utc)
+                if (now - st).total_seconds() >= assessment.time_limit_seconds:
+                    existing_attempt.started_at = now
             await db.execute(delete(Violation).where(Violation.attempt_id == existing_attempt.id))
 
         # Check if exam timer has expired in the meantime

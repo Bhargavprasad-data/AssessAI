@@ -46,6 +46,26 @@ async def serve_first_question_if_needed(
     if attempt.current_question_id:
         return await session.get(Question, attempt.current_question_id)
 
+    # Check for any previously served question for this attempt that was not yet answered
+    stmt = (
+        select(AttemptQuestionServing)
+        .where(
+            AttemptQuestionServing.attempt_id == attempt.id,
+            AttemptQuestionServing.question_id.not_in(
+                select(AttemptAnswer.question_id).where(AttemptAnswer.attempt_id == attempt.id)
+            )
+        )
+        .order_by(AttemptQuestionServing.sequence_number.desc())
+        .limit(1)
+    )
+    unanswered_serving = (await session.execute(stmt)).scalar_one_or_none()
+    if unanswered_serving:
+        q = await session.get(Question, unanswered_serving.question_id)
+        if q:
+            attempt.current_question_id = q.id
+            attempt.current_question_started_at = datetime.now(timezone.utc)
+            return q
+
     first_q = await select_next_adaptive_question(
         session=session,
         attempt=attempt,
