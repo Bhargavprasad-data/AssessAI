@@ -53,14 +53,15 @@ export async function attemptTokenRefresh(): Promise<boolean> {
         body: storedRefreshToken ? JSON.stringify({ refresh_token: storedRefreshToken, role: 'teacher' }) : undefined,
       });
       if (res.ok) {
-        const data = await res.json();
+        const text = await res.text();
+        const data = text && text.trim() ? JSON.parse(text) : null;
         if (data && data.access_token) {
           localStorage.setItem('auth_token', data.access_token);
         }
         if (data && data.refresh_token) {
           localStorage.setItem('refresh_token', data.refresh_token);
         }
-        if (data && data.user && (data.user.role === 'teacher' || data.user.role === 'admin')) {
+        if (data && data.user && data.user.role === 'teacher') {
           localStorage.setItem('cached_user', JSON.stringify(data.user));
         }
         if (data && data.csrf_token) {
@@ -146,27 +147,42 @@ export async function apiFetch<T>(
     }
   }
 
+  const rawText = await response.text();
+  let parsedData: any = null;
+  if (rawText && rawText.trim()) {
+    try {
+      parsedData = JSON.parse(rawText);
+    } catch {
+      parsedData = rawText;
+    }
+  }
+
   if (!response.ok) {
     let errorDetail = `Request failed with status ${response.status}`;
-    try {
-      const errorJson = await response.json();
-      if (typeof errorJson.detail === 'string') {
-        errorDetail = errorJson.detail;
-      } else if (typeof errorJson.detail === 'object' && errorJson.detail.message) {
-        errorDetail = errorJson.detail.message;
-      } else if (errorJson.message) {
-        errorDetail = errorJson.message;
+    if (parsedData && typeof parsedData === 'object') {
+      if (typeof parsedData.detail === 'string') {
+        errorDetail = parsedData.detail;
+      } else if (Array.isArray(parsedData.detail)) {
+        errorDetail = parsedData.detail
+          .map((item: any) => (typeof item === 'string' ? item : item.msg || item.message || JSON.stringify(item)))
+          .join('; ');
+      } else if (typeof parsedData.detail === 'object' && parsedData.detail.message) {
+        errorDetail = parsedData.detail.message;
+      } else if (parsedData.message) {
+        errorDetail = parsedData.message;
+      } else if (parsedData.error) {
+        errorDetail = typeof parsedData.error === 'string' ? parsedData.error : JSON.stringify(parsedData.error);
       }
-    } catch {
-      // Use generic errorDetail
+    } else if (typeof parsedData === 'string' && parsedData.trim()) {
+      errorDetail = parsedData;
     }
     throw new Error(errorDetail);
   }
 
-  // If response is 204 No Content
-  if (response.status === 204) {
+  // If response is 204 No Content or body is empty
+  if (response.status === 204 || parsedData === null) {
     return {} as T;
   }
 
-  return response.json();
+  return parsedData as T;
 }

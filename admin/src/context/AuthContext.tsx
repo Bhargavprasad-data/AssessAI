@@ -149,6 +149,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    if (!res || !res.user) {
+      throw new Error('Authentication response is missing user data.');
+    }
     if (res.csrf_token) localStorage.setItem('csrf_token', res.csrf_token);
     if (res.access_token) localStorage.setItem('auth_token', res.access_token);
     if (res.refresh_token) localStorage.setItem('refresh_token', res.refresh_token);
@@ -162,6 +165,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: 'POST',
       body: JSON.stringify({ name, email, password }),
     });
+    if (!res || !res.user) {
+      throw new Error('Registration response is missing user data.');
+    }
     if (res.csrf_token) localStorage.setItem('csrf_token', res.csrf_token);
     if (res.access_token) localStorage.setItem('auth_token', res.access_token);
     if (res.refresh_token) localStorage.setItem('refresh_token', res.refresh_token);

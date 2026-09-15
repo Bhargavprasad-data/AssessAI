@@ -117,8 +117,9 @@ export default function AssessmentAnalyticsPage() {
       if (!res.ok) {
         let errMessage = `Export failed with status ${res.status}`;
         try {
-          const errJson = await res.json();
-          if (errJson.detail) errMessage = errJson.detail;
+          const rawText = await res.text();
+          const errJson = rawText ? JSON.parse(rawText) : null;
+          if (errJson && errJson.detail) errMessage = errJson.detail;
         } catch {}
         throw new Error(errMessage);
       }
