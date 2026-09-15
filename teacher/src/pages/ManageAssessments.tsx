@@ -17,7 +17,6 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
-  X,
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 import type { Assessment } from '../types';
@@ -292,19 +291,8 @@ export const ManageAssessments: React.FC = () => {
                         else setIsSearchOpen(false);
                       }
                     }}
-                    className="w-full pl-10 pr-9 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-950 border border-brand-500/50 dark:border-brand-400/50 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all shadow-md"
+                    className="w-full pl-10 pr-3.5 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-950 border border-brand-500/50 dark:border-brand-400/50 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all shadow-md"
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setIsSearchOpen(false);
-                    }}
-                    className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                    title="Close search"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
                 </motion.div>
               ) : (
                 <motion.button

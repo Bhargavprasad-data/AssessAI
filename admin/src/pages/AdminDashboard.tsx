@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers, X
+  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 import type { User, UserRole } from '../types';
@@ -331,21 +331,8 @@ export default function AdminDashboard() {
                       }
                     }}
                     placeholder="Search users by name or email..."
-                    className={`${inputCls} !pl-10 pr-9 border-brand-500/50 dark:border-brand-400/50 ring-2 ring-brand-500/20 shadow-md transition-all`}
+                    className={`${inputCls} !pl-10 pr-3.5 border-brand-500/50 dark:border-brand-400/50 ring-2 ring-brand-500/20 shadow-md transition-all`}
                   />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchQuery('');
-                        setIsSearchOpen(false);
-                      }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                      title="Clear search"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </motion.div>
               ) : (
                 <motion.div
