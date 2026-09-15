@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers
+  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers, X
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 import type { User, UserRole } from '../types';
@@ -285,14 +285,24 @@ export default function AdminDashboard() {
 
           {/* Search */}
           <div className="sm:col-span-6 relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search users by name or email..."
-              className={`${inputCls} pl-9`}
+              className={`${inputCls} !pl-10 pr-9`}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Role filter */}
