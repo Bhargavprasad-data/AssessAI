@@ -297,10 +297,8 @@ export default function AdminDashboard() {
             <motion.div
               initial={false}
               transition={{
-                type: 'spring',
-                stiffness: 300,
-                damping: 25,
-                mass: 0.6,
+                duration: 0.32,
+                ease: [0.16, 1, 0.3, 1],
               }}
               onMouseEnter={() => setIsSearchOpen(true)}
               onMouseLeave={() => {
@@ -313,17 +311,23 @@ export default function AdminDashboard() {
                 setIsSearchOpen(true);
                 searchInputRef.current?.focus();
               }}
-              className={`relative w-full flex items-center h-[42px] rounded-xl border transition-all duration-200 overflow-hidden ${
+              className={`relative w-full flex items-center h-[42px] rounded-xl border transition-all duration-300 overflow-hidden cursor-pointer ${
                 isSearchOpen || searchQuery
-                  ? 'border-brand-500/60 dark:border-brand-400/60 bg-white dark:bg-slate-900 shadow-md ring-2 ring-brand-500/20 cursor-text'
-                  : 'border-dashed border-slate-300 dark:border-slate-700/80 bg-white/40 dark:bg-slate-900/40 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-brand-500/60 cursor-pointer'
+                  ? 'border-brand-500/70 dark:border-brand-400/70 bg-white dark:bg-slate-900 shadow-md ring-2 ring-brand-500/20'
+                  : 'border-dashed border-slate-300 dark:border-slate-700/80 bg-white/40 dark:bg-slate-900/40 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-brand-500/60'
               }`}
             >
-              <div className="absolute left-3.5 flex items-center pointer-events-none z-10">
+              <motion.div
+                className="absolute left-3.5 flex items-center pointer-events-none z-10"
+                animate={{
+                  scale: isSearchOpen || searchQuery ? 1.08 : 1,
+                }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+              >
                 <Search className={`w-4 h-4 transition-colors duration-200 ${isSearchOpen || searchQuery ? 'text-brand-500' : 'text-slate-400 dark:text-slate-500'}`} />
-              </div>
+              </motion.div>
 
-              <input
+              <motion.input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
@@ -342,16 +346,26 @@ export default function AdminDashboard() {
                   }
                 }}
                 placeholder="Search users by name or email..."
-                className={`w-full h-full pl-10 pr-3.5 text-xs bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-400 transition-opacity duration-200 ${
-                  isSearchOpen || searchQuery ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                animate={{
+                  opacity: isSearchOpen || searchQuery ? 1 : 0,
+                  x: isSearchOpen || searchQuery ? 0 : 8,
+                }}
+                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                className={`w-full h-full pl-10 pr-3.5 text-xs bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-400 ${
+                  isSearchOpen || searchQuery ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}
               />
 
-              {!isSearchOpen && !searchQuery && (
-                <span className="absolute left-10 text-xs text-slate-400 dark:text-slate-400 pointer-events-none select-none whitespace-nowrap">
-                  Hover or click to search users...
-                </span>
-              )}
+              <motion.span
+                animate={{
+                  opacity: isSearchOpen || searchQuery ? 0 : 1,
+                  x: isSearchOpen || searchQuery ? -8 : 0,
+                }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="absolute left-10 text-xs text-slate-400 dark:text-slate-400 pointer-events-none select-none whitespace-nowrap"
+              >
+                Hover or click to search users...
+              </motion.span>
             </motion.div>
           </div>
 
