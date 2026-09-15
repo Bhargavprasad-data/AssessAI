@@ -15,6 +15,20 @@
   html.dark body {
     @apply bg-slate-950 text-slate-100;
   }
+
+  /* Hide default browser password reveal and clear buttons (Edge, IE, WebKit) */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  input::-webkit-credentials-auto-fill-button {
+    visibility: hidden;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+  }
 }
 
 /* ── Custom Scrollbar ── */
