@@ -71,8 +71,28 @@ export const AssessmentBuilder: React.FC = () => {
     required: number;
   } | null>(null);
 
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  // Floating Toast Notification State (Fixed position, same as Delete Test toast)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const toastTimerRef = useRef<any>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToast({ type, message });
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+    }, 4500);
+  };
+
+  const setError = (msg: string | null) => {
+    if (msg) showToast('error', msg);
+  };
+
+  const setSuccess = (msg: string | null) => {
+    if (msg) showToast('success', msg);
+  };
+
   const [saving, setSaving] = useState(false);
 
   // Helper to deduplicate materials by filename and ID
@@ -478,7 +498,6 @@ export const AssessmentBuilder: React.FC = () => {
 
   // Save or Publish Assessment
   const handleSaveAssessment = async (publishNow: boolean, overrideSufficiency: boolean = false) => {
-    setError(null);
     setSaving(true);
 
     const finalMaxCount = typeof maxQuestionCount === 'number' ? maxQuestionCount : 6;
@@ -517,29 +536,39 @@ export const AssessmentBuilder: React.FC = () => {
       }
 
       if (publishNow && currentId) {
-        try {
-          await apiFetch<any>(`/api/teacher/assessments/${currentId}/publish`, {
-            method: 'POST',
-            body: JSON.stringify({ override_sufficiency: overrideSufficiency }),
-          });
-          setSufficiencyWarning(null);
-          navigate(`/teacher/assessments/${currentId}/analytics`);
-        } catch (pubErr: any) {
-          if (pubErr.message.includes('pool_insufficient') || pubErr.message.includes('eligible questions')) {
-            setSufficiencyWarning({
-              message: pubErr.message,
-              total_eligible: selectedQuestionIds.size,
-              required: finalMaxCount,
+        if (editingStatus === 'published') {
+          showToast('success', 'Assessment updated and saved successfully!');
+          setTimeout(() => navigate(`/teacher/assessments/${currentId}/analytics`), 1200);
+        } else {
+          try {
+            await apiFetch<any>(`/api/teacher/assessments/${currentId}/publish`, {
+              method: 'POST',
+              body: JSON.stringify({ override_sufficiency: overrideSufficiency }),
             });
-          } else {
-            throw pubErr;
+            setSufficiencyWarning(null);
+            showToast('success', 'Assessment published successfully!');
+            setTimeout(() => navigate(`/teacher/assessments/${currentId}/analytics`), 1200);
+          } catch (pubErr: any) {
+            if (pubErr.message.includes('already published')) {
+              showToast('success', 'Assessment updated and saved successfully!');
+              setTimeout(() => navigate(`/teacher/assessments/${currentId}/analytics`), 1200);
+            } else if (pubErr.message.includes('pool_insufficient') || pubErr.message.includes('eligible questions')) {
+              setSufficiencyWarning({
+                message: pubErr.message,
+                total_eligible: selectedQuestionIds.size,
+                required: finalMaxCount,
+              });
+            } else {
+              throw pubErr;
+            }
           }
         }
       } else {
-        navigate('/teacher/dashboard');
+        showToast('success', assessmentId ? 'Assessment changes saved successfully!' : 'Draft saved successfully!');
+        setTimeout(() => navigate('/teacher/dashboard'), 1200);
       }
     } catch (err: any) {
-      setError(err.message);
+      showToast('error', err.message);
     } finally {
       setSaving(false);
     }
@@ -603,20 +632,6 @@ export const AssessmentBuilder: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {error && (
-        <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 text-xs flex items-center space-x-2">
-          <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {success && (
-        <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-center space-x-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-          <span>{success}</span>
-        </div>
-      )}
 
       {/* Tab 1: Multi-Material & AI Generation */}
       {activeTab === 'material' && (
@@ -1694,6 +1709,31 @@ export const AssessmentBuilder: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Floating Toast Notification (Same as Delete Test notification in Manage Assessments) */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center space-x-3 px-5 py-3.5 rounded-2xl shadow-2xl border transition-all duration-300 animate-bounce ${
+            toast.type === 'error'
+              ? 'bg-rose-600 text-white border-rose-400/30'
+              : 'bg-emerald-600 text-white border-emerald-400/30'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-white" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-white" />
+          )}
+          <span className="text-sm font-semibold">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-2 p-1 hover:bg-white/20 rounded-lg transition-colors text-white"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );
