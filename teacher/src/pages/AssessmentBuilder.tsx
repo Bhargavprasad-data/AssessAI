@@ -22,8 +22,10 @@ export const AssessmentBuilder: React.FC = () => {
   const { assessmentId } = useParams<{ assessmentId: string }>();
   const navigate = useNavigate();
 
-  // Active step
-  const [activeTab, setActiveTab] = useState<'material' | 'questions' | 'config'>('material');
+  // Active step (defaults to 'config' (Settings & Save) if editing an existing assessment, else 'material')
+  const [activeTab, setActiveTab] = useState<'material' | 'questions' | 'config'>(
+    assessmentId ? 'config' : 'material'
+  );
 
   // Multi-Material & AI Job State
   const [materials, setMaterials] = useState<UploadedMaterialItem[]>([]);
@@ -106,6 +108,7 @@ export const AssessmentBuilder: React.FC = () => {
   // Load existing assessment & its assigned questions when editing
   useEffect(() => {
     if (!assessmentId) return;
+    setActiveTab('config');
     const loadAssessment = async () => {
       setLoadingAssessment(true);
       try {
@@ -135,9 +138,6 @@ export const AssessmentBuilder: React.FC = () => {
             // Extract material IDs from questions
             const matIds = Array.from(new Set(qList.map(q => q.material_id).filter(Boolean)));
             setSelectedMaterialIds(new Set(matIds));
-
-            // Default to config settings tab so teacher sees existing parameters immediately
-            setActiveTab('config');
           }
         } catch (qErr) {
           console.warn('Could not load assessment questions:', qErr);
