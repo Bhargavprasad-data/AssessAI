@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { apiFetch } from '../api/client';
 import type { AttemptResults, AttemptAnswerReview } from '../types';
 import { DifficultyBadge } from '../components/common/Badge';
@@ -364,69 +364,66 @@ export const ExamResults: React.FC = () => {
             </p>
           </div>
 
-          {/* Expandable / Pop-up Animated Search Bar with Hover-to-Open */}
-          <div
-            className="relative flex items-center print:hidden"
+          {/* Ultra-Smooth Expandable Search Bar with Hover-to-Open */}
+          <motion.div
+            initial={false}
+            animate={{ width: isSearchOpen || searchQuery ? 260 : 135 }}
+            transition={{
+              type: 'spring',
+              stiffness: 300,
+              damping: 25,
+              mass: 0.6,
+            }}
             onMouseEnter={() => setIsSearchOpen(true)}
             onMouseLeave={() => {
               if (!searchQuery.trim() && document.activeElement !== searchInputRef.current) {
                 setIsSearchOpen(false);
               }
             }}
+            onClick={() => {
+              setIsSearchOpen(true);
+              searchInputRef.current?.focus();
+            }}
+            className={`relative flex items-center h-[38px] rounded-xl border transition-colors shadow-xs overflow-hidden print:hidden ${
+              isSearchOpen || searchQuery
+                ? 'border-brand-500/60 dark:border-brand-400/60 bg-white dark:bg-slate-900/90 shadow-md ring-2 ring-brand-500/20 cursor-text'
+                : 'border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 hover:border-brand-500/40 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer'
+            }`}
           >
-            <AnimatePresence initial={false} mode="wait">
-              {isSearchOpen ? (
-                <motion.div
-                  key="open-search"
-                  initial={{ width: 44, opacity: 0, scale: 0.95 }}
-                  animate={{ width: 260, opacity: 1, scale: 1 }}
-                  exit={{ width: 44, opacity: 0, scale: 0.95 }}
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                  className="relative flex items-center"
-                >
-                  <Search className="w-4 h-4 text-brand-500 absolute left-3.5 pointer-events-none" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="Search in questions..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onFocus={() => setIsSearchOpen(true)}
-                    onBlur={() => {
-                      if (!searchQuery.trim()) {
-                        setIsSearchOpen(false);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        if (searchQuery) setSearchQuery('');
-                        else setIsSearchOpen(false);
-                      }
-                    }}
-                    className="w-full pl-10 pr-3.5 py-2 text-xs rounded-xl bg-white dark:bg-slate-900/80 border border-brand-500/50 dark:border-brand-400/50 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all shadow-md"
-                  />
-                </motion.div>
-              ) : (
-                <motion.button
-                  key="closed-search"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.15 }}
-                  type="button"
-                  onClick={() => setIsSearchOpen(true)}
-                  className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 transition-all shadow-xs cursor-pointer group hover:border-brand-500/40"
-                  title="Hover to search questions"
-                >
-                  <Search className="w-4 h-4 text-brand-500 group-hover:scale-110 transition-transform" />
-                  <span>{searchQuery ? `Searching: "${searchQuery.slice(0, 12)}..."` : 'Search Questions'}</span>
-                  {searchQuery && (
-                    <span className="w-2 h-2 rounded-full bg-brand-500 animate-pulse ml-1" />
-                  )}
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
+            <div className="absolute left-3.5 flex items-center pointer-events-none z-10">
+              <Search className={`w-4 h-4 transition-colors duration-200 ${isSearchOpen || searchQuery ? 'text-brand-500' : 'text-slate-400 dark:text-slate-500'}`} />
+            </div>
+
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search in questions..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchOpen(true)}
+              onBlur={() => {
+                if (!searchQuery.trim()) {
+                  setIsSearchOpen(false);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  if (searchQuery) setSearchQuery('');
+                  setIsSearchOpen(false);
+                  searchInputRef.current?.blur();
+                }
+              }}
+              className={`w-full h-full pl-10 pr-3.5 text-xs bg-transparent border-none outline-none text-slate-800 dark:text-slate-200 placeholder-slate-400 transition-opacity duration-200 ${
+                isSearchOpen || searchQuery ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`}
+            />
+
+            {!isSearchOpen && !searchQuery && (
+              <span className="absolute left-9 text-xs font-semibold text-slate-700 dark:text-slate-300 pointer-events-none select-none whitespace-nowrap">
+                Search Questions
+              </span>
+            )}
+          </motion.div>
         </div>
 
         {/* Filter Pills */}

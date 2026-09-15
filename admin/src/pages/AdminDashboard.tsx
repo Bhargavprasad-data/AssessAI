@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers
 } from 'lucide-react';
@@ -292,65 +292,66 @@ export default function AdminDashboard() {
           bg-slate-100/70 dark:bg-slate-800/50
           border-slate-200 dark:border-slate-700/60">
 
-          {/* Search */}
-          <div
-            className="sm:col-span-6 relative flex items-center"
-            onMouseEnter={() => setIsSearchOpen(true)}
-            onMouseLeave={() => {
-              if (!searchQuery.trim() && document.activeElement !== searchInputRef.current) {
-                setIsSearchOpen(false);
-              }
-            }}
-          >
-            <AnimatePresence initial={false} mode="wait">
-              {isSearchOpen ? (
-                <motion.div
-                  key="open-search"
-                  initial={{ width: '100%', opacity: 0.9, scale: 0.99 }}
-                  animate={{ width: '100%', opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0.8, scale: 0.99 }}
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                  className="relative w-full flex items-center"
-                >
-                  <Search className="w-4 h-4 text-brand-500 absolute left-3.5 pointer-events-none" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onFocus={() => setIsSearchOpen(true)}
-                    onBlur={() => {
-                      if (!searchQuery.trim()) {
-                        setIsSearchOpen(false);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        if (searchQuery) setSearchQuery('');
-                        else setIsSearchOpen(false);
-                      }
-                    }}
-                    placeholder="Search users by name or email..."
-                    className={`${inputCls} !pl-10 pr-3.5 border-brand-500/50 dark:border-brand-400/50 ring-2 ring-brand-500/20 shadow-md transition-all`}
-                  />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="collapsed-search"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setIsSearchOpen(true)}
-                  className="w-full h-[42px] px-3.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700/80 bg-white/40 dark:bg-slate-900/40 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-brand-500/60 text-slate-400 hover:text-brand-500 flex items-center gap-2.5 cursor-pointer transition-all shadow-sm group"
-                  title="Hover or click to search"
-                >
-                  <Search className="w-4 h-4 transition-transform group-hover:scale-110 group-hover:text-brand-500" />
-                  <span className="text-xs select-none">
-                    {searchQuery ? searchQuery : 'Hover cursor to search users...'}
-                  </span>
-                </motion.div>
+          {/* Ultra-Smooth Expandable Search Bar with Hover-to-Open */}
+          <div className="sm:col-span-6 relative flex items-center">
+            <motion.div
+              initial={false}
+              transition={{
+                type: 'spring',
+                stiffness: 300,
+                damping: 25,
+                mass: 0.6,
+              }}
+              onMouseEnter={() => setIsSearchOpen(true)}
+              onMouseLeave={() => {
+                if (!searchQuery.trim() && document.activeElement !== searchInputRef.current) {
+                  setIsSearchOpen(false);
+                }
+              }}
+              onClick={() => {
+                setIsSearchOpen(true);
+                searchInputRef.current?.focus();
+              }}
+              className={`relative w-full flex items-center h-[42px] rounded-xl border transition-all duration-200 overflow-hidden ${
+                isSearchOpen || searchQuery
+                  ? 'border-brand-500/60 dark:border-brand-400/60 bg-white dark:bg-slate-900 shadow-md ring-2 ring-brand-500/20 cursor-text'
+                  : 'border-dashed border-slate-300 dark:border-slate-700/80 bg-white/40 dark:bg-slate-900/40 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-brand-500/60 cursor-pointer'
+              }`}
+            >
+              <div className="absolute left-3.5 flex items-center pointer-events-none z-10">
+                <Search className={`w-4 h-4 transition-colors duration-200 ${isSearchOpen || searchQuery ? 'text-brand-500' : 'text-slate-400 dark:text-slate-500'}`} />
+              </div>
+
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchOpen(true)}
+                onBlur={() => {
+                  if (!searchQuery.trim()) {
+                    setIsSearchOpen(false);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    if (searchQuery) setSearchQuery('');
+                    setIsSearchOpen(false);
+                    searchInputRef.current?.blur();
+                  }
+                }}
+                placeholder="Search users by name or email..."
+                className={`w-full h-full pl-10 pr-3.5 text-xs bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-400 transition-opacity duration-200 ${
+                  isSearchOpen || searchQuery ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
+              />
+
+              {!isSearchOpen && !searchQuery && (
+                <span className="absolute left-10 text-xs text-slate-400 dark:text-slate-400 pointer-events-none select-none whitespace-nowrap">
+                  Hover or click to search users...
+                </span>
               )}
-            </AnimatePresence>
+            </motion.div>
           </div>
 
           {/* Role filter */}
