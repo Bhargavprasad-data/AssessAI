@@ -43,6 +43,11 @@ export interface Assessment {
   created_at: string;
   config_locked: boolean;
   question_count?: number;
+  attempts_count?: number;
+  active_attempts_count?: number;
+  completed_attempts_count?: number;
+  teacher_name?: string;
+  teacher_email?: string;
 }
 
 export interface CurrentQuestion {

@@ -8,6 +8,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import { AssessmentBuilder } from './pages/AssessmentBuilder';
+import { ManageAssessments } from './pages/ManageAssessments';
 import AssessmentAnalyticsPage from './pages/AssessmentAnalytics';
 import { ShieldAlert, LogOut } from 'lucide-react';
 
@@ -112,6 +113,14 @@ export default function App() {
                 element={
                   <TeacherRoute>
                     <TeacherShell><AssessmentBuilder /></TeacherShell>
+                  </TeacherRoute>
+                }
+              />
+              <Route
+                path="/teacher/assessments/manage"
+                element={
+                  <TeacherRoute>
+                    <TeacherShell><ManageAssessments /></TeacherShell>
                   </TeacherRoute>
                 }
               />

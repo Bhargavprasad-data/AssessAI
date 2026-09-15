@@ -41,13 +41,21 @@ export const TeacherDashboard: React.FC = () => {
               Manage course materials, AI-generated pools, and live assessments.
             </p>
           </div>
-          <Link
-            to="/teacher/assessments/new"
-            className="inline-flex items-center space-x-2 py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm shadow-lg shadow-brand-500/25 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Assessment</span>
-          </Link>
+          <div className="flex items-center space-x-3">
+            <Link
+              to="/teacher/assessments/manage"
+              className="inline-flex items-center space-x-2 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 font-semibold text-sm transition-all"
+            >
+              <span>Manage & Delete Tests</span>
+            </Link>
+            <Link
+              to="/teacher/assessments/new"
+              className="inline-flex items-center space-x-2 py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm shadow-lg shadow-brand-500/25 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Assessment</span>
+            </Link>
+          </div>
         </div>
       )}
 

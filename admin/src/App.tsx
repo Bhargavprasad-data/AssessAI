@@ -6,6 +6,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { Sidebar } from './components/common/Sidebar';
 import { Login } from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
+import AssessmentManager from './pages/AssessmentManager';
 import AuditLogViewer from './pages/AuditLogViewer';
 
 const queryClient = new QueryClient({
@@ -74,6 +75,16 @@ export default function App() {
                   <AdminRoute>
                     <AdminShell>
                       <AdminDashboard />
+                    </AdminShell>
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/assessments"
+                element={
+                  <AdminRoute>
+                    <AdminShell>
+                      <AssessmentManager />
                     </AdminShell>
                   </AdminRoute>
                 }

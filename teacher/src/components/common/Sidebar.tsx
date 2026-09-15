@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart3,
   FilePlus,
+  Layers,
   LogOut,
   Sun,
   Moon,
@@ -20,8 +21,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',      path: '/teacher/dashboard',       icon: BarChart3 },
-  { label: 'New Assessment', path: '/teacher/assessments/new', icon: FilePlus  },
+  { label: 'Dashboard',      path: '/teacher/dashboard',          icon: BarChart3 },
+  { label: 'Manage Tests',   path: '/teacher/assessments/manage', icon: Layers, prefix: true },
+  { label: 'New Assessment', path: '/teacher/assessments/new',    icon: FilePlus  },
 ];
 
 const SPRING = { type: 'spring', stiffness: 340, damping: 32, mass: 0.8 } as const;

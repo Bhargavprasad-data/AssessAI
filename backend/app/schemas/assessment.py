@@ -64,3 +64,8 @@ class AssessmentOut(BaseModel):
     created_at: datetime
     config_locked: bool
     question_count: Optional[int] = 0
+    attempts_count: Optional[int] = 0
+    active_attempts_count: Optional[int] = 0
+    completed_attempts_count: Optional[int] = 0
+    teacher_name: Optional[str] = None
+    teacher_email: Optional[str] = None

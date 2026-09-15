@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff
+  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 import type { User, UserRole } from '../types';
@@ -240,6 +240,18 @@ export default function AdminDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/admin/assessments"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors
+              border border-slate-300 dark:border-slate-700
+              bg-white dark:bg-slate-800/80
+              text-slate-700 dark:text-slate-300
+              hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            <Layers className="w-4 h-4 text-brand-500" />
+            Test Management
+          </Link>
+
           <Link
             to="/admin/audit-logs"
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors

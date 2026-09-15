@@ -881,10 +881,28 @@ async def list_teacher_assessments(
         q_count = await db.scalar(
             select(func.count(AssessmentQuestion.question_id)).where(AssessmentQuestion.assessment_id == a.id)
         )
-        has_active = await has_active_attempts_for_assessment(db, a.id)
+        total_attempts = await db.scalar(
+            select(func.count(Attempt.id)).where(Attempt.assessment_id == a.id)
+        ) or 0
+        active_attempts = await db.scalar(
+            select(func.count(Attempt.id)).where(
+                Attempt.assessment_id == a.id,
+                Attempt.status.in_(["in_progress", "disconnected"])
+            )
+        ) or 0
+        completed_attempts = await db.scalar(
+            select(func.count(Attempt.id)).where(
+                Attempt.assessment_id == a.id,
+                Attempt.status.in_(["submitted", "terminated"])
+            )
+        ) or 0
+
         out = AssessmentOut.model_validate(a)
         out.question_count = q_count or 0
-        out.config_locked = has_active
+        out.config_locked = active_attempts > 0
+        out.attempts_count = total_attempts
+        out.active_attempts_count = active_attempts
+        out.completed_attempts_count = completed_attempts
         results.append(out)
     return results
 
@@ -902,10 +920,28 @@ async def get_teacher_assessment(
     q_count = await db.scalar(
         select(func.count(AssessmentQuestion.question_id)).where(AssessmentQuestion.assessment_id == assessment.id)
     )
-    has_active = await has_active_attempts_for_assessment(db, assessment.id)
+    total_attempts = await db.scalar(
+        select(func.count(Attempt.id)).where(Attempt.assessment_id == assessment.id)
+    ) or 0
+    active_attempts = await db.scalar(
+        select(func.count(Attempt.id)).where(
+            Attempt.assessment_id == assessment.id,
+            Attempt.status.in_(["in_progress", "disconnected"])
+        )
+    ) or 0
+    completed_attempts = await db.scalar(
+        select(func.count(Attempt.id)).where(
+            Attempt.assessment_id == assessment.id,
+            Attempt.status.in_(["submitted", "terminated"])
+        )
+    ) or 0
+
     out = AssessmentOut.model_validate(assessment)
     out.question_count = q_count or 0
-    out.config_locked = has_active
+    out.config_locked = active_attempts > 0
+    out.attempts_count = total_attempts
+    out.active_attempts_count = active_attempts
+    out.completed_attempts_count = completed_attempts
     return out
 
 
@@ -949,16 +985,35 @@ async def update_assessment(
     q_count = await db.scalar(
         select(func.count(AssessmentQuestion.question_id)).where(AssessmentQuestion.assessment_id == assessment.id)
     )
+    total_attempts = await db.scalar(
+        select(func.count(Attempt.id)).where(Attempt.assessment_id == assessment.id)
+    ) or 0
+    active_attempts = await db.scalar(
+        select(func.count(Attempt.id)).where(
+            Attempt.assessment_id == assessment.id,
+            Attempt.status.in_(["in_progress", "disconnected"])
+        )
+    ) or 0
+    completed_attempts = await db.scalar(
+        select(func.count(Attempt.id)).where(
+            Attempt.assessment_id == assessment.id,
+            Attempt.status.in_(["submitted", "terminated"])
+        )
+    ) or 0
+
     out = AssessmentOut.model_validate(assessment)
     out.question_count = q_count or 0
     out.config_locked = False
+    out.attempts_count = total_attempts
+    out.active_attempts_count = active_attempts
+    out.completed_attempts_count = completed_attempts
     return out
 
 
 @router.post("/assessments/{assessment_id}/publish")
 async def publish_assessment(
     assessment_id: uuid.UUID,
-    req: AssessmentPublishRequest = AssessmentPublishRequest(),
+    publish_req: Optional[AssessmentPublishRequest] = None,
     current_teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
@@ -966,35 +1021,39 @@ async def publish_assessment(
     if not assessment or assessment.teacher_id != current_teacher.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found.")
 
-    # Pool sufficiency check
-    pool_stmt = (
-        select(Question.difficulty, func.count(Question.id))
-        .join(AssessmentQuestion, AssessmentQuestion.question_id == Question.id)
+    if assessment.status == "published":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assessment is already published.")
+
+    # Pool Sufficiency Invariant Checks
+    counts = await db.execute(
+        select(AssessmentQuestion.difficulty, func.count(AssessmentQuestion.question_id))
+        .join(Question, Question.id == AssessmentQuestion.question_id)
         .where(
             AssessmentQuestion.assessment_id == assessment.id,
-            Question.retired_at.is_(None)
+            Question.retired_at == None
         )
-        .group_by(Question.difficulty)
+        .group_by(AssessmentQuestion.difficulty)
     )
-    counts = dict((await db.execute(pool_stmt)).all())
-    total_eligible = sum(counts.values())
+    diff_counts = {row[0]: row[1] for row in counts.all()}
+    warnings = []
 
-    if total_eligible < assessment.max_question_count and not req.override_sufficiency:
+    # Verify minimum pool depth across difficulties
+    for diff in ["easy", "medium", "hard"]:
+        count = diff_counts.get(diff, 0)
+        if count < 3:
+            warnings.append(f"Insufficient active questions for difficulty '{diff}': found {count}, recommended >= 3.")
+
+    total_eligible = sum(diff_counts.values())
+    if total_eligible < assessment.max_question_count and not (publish_req and publish_req.override_sufficiency):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "error": "pool_insufficient",
-                "message": f"Assessment pool has {total_eligible} eligible questions, but requires {assessment.max_question_count}. Provide override_sufficiency=true to proceed.",
+                "message": f"Question pool ({total_eligible}) is smaller than max_question_count ({assessment.max_question_count}). Set override_sufficiency=true to publish anyway.",
+                "warnings": warnings,
                 "total_eligible": total_eligible,
-                "required": assessment.max_question_count
+                "max_question_count": assessment.max_question_count
             }
         )
-
-    # Per-difficulty non-blocking advisory warnings
-    warnings = []
-    for diff in ["easy", "medium", "hard"]:
-        if counts.get(diff, 0) == 0:
-            warnings.append(f"Advisory: Zero '{diff}' questions in pool. Adaptive progression to this difficulty may be limited.")
 
     assessment.status = "published"
     await db.commit()
@@ -1024,31 +1083,54 @@ async def delete_assessment(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Destructive operation policy (Section 8.15):
-    Hard-delete permitted ONLY for draft assessments with zero attempts ever.
+    Deletes an assessment (Current / Future / Past) created by the current teacher,
+    cleaning up all associated questions, attempts, answers, proctoring violations,
+    and bans.
     """
     assessment = await db.get(Assessment, assessment_id)
     if not assessment or assessment.teacher_id != current_teacher.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found.")
 
-    attempts_count = await db.scalar(
-        select(func.count(Attempt.id)).where(Attempt.assessment_id == assessment.id)
-    )
-    if attempts_count and attempts_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete assessment: {attempts_count} attempt records exist. Archive or close the assessment instead."
-        )
+    # Get all attempt IDs for this assessment
+    attempt_ids = (await db.scalars(
+        select(Attempt.id).where(Attempt.assessment_id == assessment.id)
+    )).all()
 
-    if assessment.status != "draft":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot hard-delete a published or closed assessment. Only draft assessments with 0 attempts may be deleted."
-        )
+    if attempt_ids:
+        await db.execute(delete(AttemptQuestionServing).where(AttemptQuestionServing.attempt_id.in_(attempt_ids)))
+        await db.execute(delete(AttemptAnswer).where(AttemptAnswer.attempt_id.in_(attempt_ids)))
+        await db.execute(delete(Violation).where(Violation.attempt_id.in_(attempt_ids)))
+        await db.execute(delete(Attempt).where(Attempt.id.in_(attempt_ids)))
+
+    await db.execute(delete(AssessmentBan).where(AssessmentBan.assessment_id == assessment.id))
+    await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.assessment_id == assessment.id))
+
+    assessment_title = assessment.title
+    assessment_status = assessment.status
+    attempts_deleted_count = len(attempt_ids)
 
     await db.delete(assessment)
     await db.commit()
-    return {"message": "Draft assessment deleted successfully."}
+
+    await record_audit_event(
+        session=db,
+        actor_user_id=current_teacher.id,
+        action="assessment_deleted",
+        target_type="assessment",
+        target_id=assessment_id,
+        metadata={
+            "title": assessment_title,
+            "status": assessment_status,
+            "deleted_attempts_count": attempts_deleted_count,
+            "deleted_by_role": "teacher"
+        }
+    )
+    await db.commit()
+
+    return {
+        "message": f"Assessment '{assessment_title}' and all associated {attempts_deleted_count} attempt records deleted successfully.",
+        "deleted_assessment_id": str(assessment_id)
+    }
 
 
 @router.get("/assessments/{assessment_id}/attempts")
