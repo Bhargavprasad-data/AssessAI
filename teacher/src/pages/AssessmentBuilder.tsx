@@ -87,6 +87,9 @@ export const AssessmentBuilder: React.FC = () => {
     return result;
   };
 
+  const [editingStatus, setEditingStatus] = useState<string | null>(null);
+  const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
+
   // Load existing materials from library on mount
   useEffect(() => {
     const loadLibrary = async () => {
@@ -100,10 +103,11 @@ export const AssessmentBuilder: React.FC = () => {
     loadLibrary();
   }, []);
 
-  // Load existing assessment when editing
+  // Load existing assessment & its assigned questions when editing
   useEffect(() => {
     if (!assessmentId) return;
     const loadAssessment = async () => {
+      setLoadingAssessment(true);
       try {
         const a = await apiFetch<any>(`/api/teacher/assessments/${assessmentId}`);
         if (a) {
@@ -118,9 +122,30 @@ export const AssessmentBuilder: React.FC = () => {
           setMaxViolations(a.max_violations ?? 3);
           setBanOnBreach(a.ban_on_violation_breach ?? true);
           setDeviceSwitchAsViolation(a.device_switch_as_violation ?? false);
+          setEditingStatus(a.status || 'published');
+        }
+
+        // Fetch questions assigned to this assessment
+        try {
+          const qList = await apiFetch<Question[]>(`/api/teacher/assessments/${assessmentId}/questions`);
+          if (qList && qList.length > 0) {
+            setQuestions(qList);
+            setSelectedQuestionIds(new Set(qList.map((q: Question) => q.id)));
+
+            // Extract material IDs from questions
+            const matIds = Array.from(new Set(qList.map(q => q.material_id).filter(Boolean)));
+            setSelectedMaterialIds(new Set(matIds));
+
+            // Default to config settings tab so teacher sees existing parameters immediately
+            setActiveTab('config');
+          }
+        } catch (qErr) {
+          console.warn('Could not load assessment questions:', qErr);
         }
       } catch (err) {
         console.warn('Could not load assessment details:', err);
+      } finally {
+        setLoadingAssessment(false);
       }
     };
     loadAssessment();
@@ -528,14 +553,30 @@ export const AssessmentBuilder: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Assessment Builder</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Upload multiple PDFs, generate comprehensive MCQs, and configure proctoring.</p>
+          <div className="flex items-center space-x-3">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              {assessmentId ? 'Edit Assessment' : 'Assessment Builder'}
+            </h1>
+            {assessmentId && (
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/20 font-bold uppercase tracking-wider">
+                {editingStatus ? editingStatus.toUpperCase() : 'EDITING'}
+              </span>
+            )}
+            {loadingAssessment && (
+              <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
+            )}
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+            {assessmentId
+              ? `Editing parameters and question pool for "${title}".`
+              : 'Upload multiple PDFs, generate comprehensive MCQs, and configure proctoring.'}
+          </p>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-white/10">
+        <div className="flex bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-white/10 self-start md:self-auto">
           <button
             onClick={() => setActiveTab('material')}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
@@ -558,7 +599,7 @@ export const AssessmentBuilder: React.FC = () => {
               activeTab === 'config' ? 'bg-brand-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            3. Settings &amp; Publish
+            3. Settings &amp; {assessmentId ? 'Save' : 'Publish'}
           </button>
         </div>
       </div>
@@ -1380,14 +1421,18 @@ export const AssessmentBuilder: React.FC = () => {
               disabled={saving}
               className="py-2.5 px-5 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-300 dark:border-white/10"
             >
-              Save Draft
+              {assessmentId ? 'Save Changes' : 'Save Draft'}
             </button>
             <button
               onClick={() => handleSaveAssessment(true, false)}
               disabled={saving}
               className="py-2.5 px-6 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-500/25 flex items-center space-x-2"
             >
-              <span>Publish Assessment</span>
+              <span>
+                {assessmentId
+                  ? (editingStatus === 'published' ? 'Save & Update Test' : 'Save & Publish')
+                  : 'Publish Assessment'}
+              </span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

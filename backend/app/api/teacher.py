@@ -945,6 +945,28 @@ async def get_teacher_assessment(
     return out
 
 
+@router.get("/assessments/{assessment_id}/questions", response_model=List[QuestionOut])
+async def get_assessment_questions(
+    assessment_id: uuid.UUID,
+    current_teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    assessment = await db.get(Assessment, assessment_id)
+    if not assessment or assessment.teacher_id != current_teacher.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found.")
+
+    stmt = (
+        select(Question)
+        .join(AssessmentQuestion, AssessmentQuestion.question_id == Question.id)
+        .where(
+            AssessmentQuestion.assessment_id == assessment.id,
+            Question.retired_at.is_(None)
+        )
+    )
+    questions = (await db.scalars(stmt)).all()
+    return questions
+
+
 @router.put("/assessments/{assessment_id}", response_model=AssessmentOut)
 async def update_assessment(
     assessment_id: uuid.UUID,
