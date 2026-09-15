@@ -11,6 +11,7 @@ import { useLeaderboard } from '../hooks/useLeaderboard';
 import type { AssessmentAnalytics, AttemptReviewItem, Assessment, ViolationEvent } from '../types';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import { AnalyticsOverviewSkeleton, AttemptsTableSkeleton } from '../components/common/Skeleton';
 
 export default function AssessmentAnalyticsPage() {
   const { id: assessmentId } = useParams<{ id: string }>();
@@ -35,22 +36,30 @@ export default function AssessmentAnalyticsPage() {
       return match;
     },
     enabled: !!assessmentId,
+    retry: true,
+    retryDelay: 2500,
   });
 
   // Fetch Analytics Data
-  const { data: analytics, isLoading: analyticsLoading } = useQuery<AssessmentAnalytics>({
+  const { data: analytics, isLoading: analyticsLoading, isError: analyticsError } = useQuery<AssessmentAnalytics>({
     queryKey: ['assessmentAnalytics', assessmentId],
     queryFn: () => apiFetch<AssessmentAnalytics>(`/api/teacher/assessments/${assessmentId}/analytics`),
     enabled: !!assessmentId,
-    refetchInterval: 10000, // Background refresh every 10s
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
 
   // Fetch Attempts List
-  const { data: attempts, isLoading: attemptsLoading } = useQuery<AttemptReviewItem[]>({
+  const { data: attempts, isLoading: attemptsLoading, isError: attemptsError } = useQuery<AttemptReviewItem[]>({
     queryKey: ['assessmentAttempts', assessmentId],
     queryFn: () => apiFetch<AttemptReviewItem[]>(`/api/teacher/assessments/${assessmentId}/attempts`),
     enabled: !!assessmentId,
-    refetchInterval: 10000,
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
 
   // Apply Assessment Ban Mutation
@@ -206,13 +215,9 @@ export default function AssessmentAnalyticsPage() {
       </div>
 
       {/* KPI Stats Overview */}
-      {analyticsLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-pulse">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-slate-100 dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded-xl" />
-          ))}
-        </div>
-      ) : analytics ? (
+      {analyticsLoading || analyticsError || !analytics ? (
+        <AnalyticsOverviewSkeleton />
+      ) : (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="p-4 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card/70 backdrop-blur">
             <div className="flex items-center justify-between">
@@ -277,7 +282,7 @@ export default function AssessmentAnalyticsPage() {
             </div>
           </div>
         </div>
-      ) : null}
+      )}
       {/* Main Grid: Real-time Leaderboard & Live Proctoring Feed */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Real-time Leaderboard (7 Cols) */}
@@ -457,35 +462,32 @@ export default function AssessmentAnalyticsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card/60 backdrop-blur overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 dark:bg-dark-bg/60 text-slate-600 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-dark-border">
-                <tr>
-                  <th className="px-4 py-3">Student</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-center">Reason</th>
-                  <th className="px-4 py-3 text-right">Score</th>
-                  <th className="px-4 py-3 text-center">Violations</th>
-                  <th className="px-4 py-3 text-center">Ban Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-dark-border/40 text-slate-700 dark:text-slate-300">
-                {attemptsLoading ? (
+        {attemptsLoading || attemptsError || !attempts ? (
+          <AttemptsTableSkeleton />
+        ) : (
+          <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card/60 backdrop-blur overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 dark:bg-dark-bg/60 text-slate-600 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-dark-border">
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-slate-500 dark:text-slate-400">
-                      Loading attempt records...
-                    </td>
+                    <th className="px-4 py-3">Student</th>
+                    <th className="px-4 py-3">Email</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-center">Reason</th>
+                    <th className="px-4 py-3 text-right">Score</th>
+                    <th className="px-4 py-3 text-center">Violations</th>
+                    <th className="px-4 py-3 text-center">Ban Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
-                ) : !attempts || attempts.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-8 text-slate-500 dark:text-slate-400">
-                      No attempts registered for this assessment yet.
-                    </td>
-                  </tr>
-                ) : (
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-dark-border/40 text-slate-700 dark:text-slate-300">
+                  {attempts.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-slate-500 dark:text-slate-400">
+                        No attempts registered for this assessment yet.
+                      </td>
+                    </tr>
+                  ) : (
                   attempts.map((attempt) => (
                     <tr key={attempt.attempt_id} className="hover:bg-slate-50 dark:hover:bg-dark-border/20 transition-colors">
                       <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{attempt.student_name}</td>
@@ -589,6 +591,7 @@ export default function AssessmentAnalyticsPage() {
             </table>
           </div>
         </div>
+      )}
       </div>
 
       {/* Assessment Ban Modal */}

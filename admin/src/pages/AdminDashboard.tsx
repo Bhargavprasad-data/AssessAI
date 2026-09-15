@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  UserPlus, AlertOctagon, Search, RefreshCw, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff
+  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 import type { User, UserRole } from '../types';
@@ -44,8 +44,8 @@ export default function AdminDashboard() {
   const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
   const [createAdminError, setCreateAdminError] = useState<string | null>(null);
 
-  // Fetch Users – retryDelay ensures skeleton stays visible while backend is down
-  const { data: users = [], isLoading, isFetching, refetch } = useQuery<User[]>({
+  // Fetch Users – continuous auto-polling and retries ensure shimmer skeleton stays active whenever backend is unavailable
+  const { data: users, isLoading, isError } = useQuery<User[]>({
     queryKey: ['adminUsers', roleFilter, bannedFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -54,19 +54,14 @@ export default function AdminDashboard() {
       const queryString = params.toString() ? `?${params.toString()}` : '';
       return apiFetch<User[]>(`/api/admin/users${queryString}`);
     },
-    retry: (failureCount, err: any) => {
-      const msg = err?.message || '';
-      if (msg.includes('403') || msg.includes('401') || msg.includes('Forbidden') || msg.includes('Unauthorized')) {
-        return false;
-      }
-      return failureCount < 2;
-    },
-    retryDelay: 1500,
-    refetchInterval: (query) => (query.state.status === 'error' ? false : false),
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
 
-  // Show skeleton when: first load OR errored with no cached data
-  const showSkeleton = isLoading && users.length === 0;
+  // Continuous shimmer skeleton when loading, offline, erroring, or data not yet available
+  const showSkeleton = isLoading || isError || !users;
 
   // Apply Global Ban Mutation
   const banMutation = useMutation({
@@ -216,7 +211,7 @@ export default function AdminDashboard() {
   };
 
   // Filtered Users List
-  const filteredUsers = users.filter((u) => {
+  const filteredUsers = (users || []).filter((u) => {
     const matchesSearch =
       u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -316,7 +311,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Refresh */}
-          <div className="sm:col-span-1 flex items-center justify-end">
+          {/* <div className="sm:col-span-1 flex items-center justify-end">
             <button
               onClick={() => refetch()}
               title="Refresh list"
@@ -329,7 +324,7 @@ export default function AdminDashboard() {
             >
               <RefreshCw className="w-4 h-4" />
             </button>
-          </div>
+          </div> */}
         </div>
       )}
 
@@ -338,128 +333,128 @@ export default function AdminDashboard() {
         <AdminTableSkeleton />
       ) : (
         <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700/60">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="text-[11px] uppercase tracking-wider font-semibold border-b
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-[11px] uppercase tracking-wider font-semibold border-b
               bg-slate-100 dark:bg-slate-800/80
               text-slate-500 dark:text-slate-400
               border-slate-200 dark:border-slate-700">
-              <tr>
-                <th className="px-5 py-3.5">User</th>
-                <th className="px-4 py-3.5">Role</th>
-                <th className="px-4 py-3.5 text-center">Platform Status</th>
-                <th className="px-4 py-3.5">Created Date</th>
-                <th className="px-4 py-3.5">Ban Reason</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50
-              bg-white dark:bg-slate-900/40 text-slate-700 dark:text-slate-300">
-              {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-slate-400">
-                    No users matching the selected criteria.
-                  </td>
+                  <th className="px-5 py-3.5">User</th>
+                  <th className="px-4 py-3.5">Role</th>
+                  <th className="px-4 py-3.5 text-center">Platform Status</th>
+                  <th className="px-4 py-3.5">Created Date</th>
+                  <th className="px-4 py-3.5">Ban Reason</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
-              ) : (
-                filteredUsers.map((user) => (
-                  <tr
-                    key={user.id}
-                    className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
-                  >
-                    <td className="px-5 py-3.5">
-                      <div className="font-semibold text-slate-900 dark:text-white">{user.name}</div>
-                      <div className="text-[11px] font-mono text-slate-400">{user.email}</div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <Badge
-                        variant={
-                          user.role === 'admin'
-                            ? 'danger'
-                            : user.role === 'teacher'
-                            ? 'primary'
-                            : 'default'
-                        }
-                      >
-                        {user.role}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3.5 text-center">
-                      {user.is_banned ? (
-                        <Badge variant="danger">Globally Banned</Badge>
-                      ) : (
-                        <Badge variant="success">Active</Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-500 dark:text-slate-400 text-[11px]">
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-500 dark:text-slate-400 text-[11px] max-w-xs truncate">
-                      {user.ban_reason || '–'}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Edit option */}
-                        <button
-                          onClick={() => handleOpenEditModal(user)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
-                            border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300
-                            hover:bg-slate-100 dark:hover:bg-slate-700"
-                          title="Edit User Details"
-                        >
-                          <Pencil className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                          Edit
-                        </button>
-
-                        {/* Delete option */}
-                        <button
-                          onClick={() => handleOpenDeleteModal(user)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
-                            border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300
-                            hover:bg-rose-500/20"
-                          title="Delete User"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Delete
-                        </button>
-
-                        {/* Ban / Revoke Ban option */}
-                        {user.role === 'admin' ? (
-                          <span className="text-[11px] text-slate-400 italic px-1">Protected</span>
-                        ) : user.is_banned ? (
-                          <button
-                            onClick={() => unbanMutation.mutate(user.id)}
-                            disabled={unbanMutation.isPending}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
-                              border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300
-                              hover:bg-emerald-500/20"
-                          >
-                            <CheckCircle2 className="w-3 h-3" />
-                            Revoke Ban
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setSelectedUserForBan(user);
-                              setBanReason('');
-                              setBanError(null);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
-                              border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300
-                              hover:bg-amber-500/20"
-                          >
-                            <Ban className="w-3 h-3" />
-                            Global Ban
-                          </button>
-                        )}
-                      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50
+              bg-white dark:bg-slate-900/40 text-slate-700 dark:text-slate-300">
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-12 text-slate-400">
+                      No users matching the selected criteria.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="px-5 py-3.5">
+                        <div className="font-semibold text-slate-900 dark:text-white">{user.name}</div>
+                        <div className="text-[11px] font-mono text-slate-400">{user.email}</div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <Badge
+                          variant={
+                            user.role === 'admin'
+                              ? 'danger'
+                              : user.role === 'teacher'
+                                ? 'primary'
+                                : 'default'
+                          }
+                        >
+                          {user.role}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3.5 text-center">
+                        {user.is_banned ? (
+                          <Badge variant="danger">Globally Banned</Badge>
+                        ) : (
+                          <Badge variant="success">Active</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-500 dark:text-slate-400 text-[11px]">
+                        {new Date(user.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-500 dark:text-slate-400 text-[11px] max-w-xs truncate">
+                        {user.ban_reason || '–'}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Edit option */}
+                          <button
+                            onClick={() => handleOpenEditModal(user)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
+                            border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300
+                            hover:bg-slate-100 dark:hover:bg-slate-700"
+                            title="Edit User Details"
+                          >
+                            <Pencil className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                            Edit
+                          </button>
+
+                          {/* Delete option */}
+                          <button
+                            onClick={() => handleOpenDeleteModal(user)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
+                            border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300
+                            hover:bg-rose-500/20"
+                            title="Delete User"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete
+                          </button>
+
+                          {/* Ban / Revoke Ban option */}
+                          {user.role === 'admin' ? (
+                            <span className="text-[11px] text-slate-400 italic px-1">Protected</span>
+                          ) : user.is_banned ? (
+                            <button
+                              onClick={() => unbanMutation.mutate(user.id)}
+                              disabled={unbanMutation.isPending}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
+                              border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300
+                              hover:bg-emerald-500/20"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              Revoke Ban
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setSelectedUserForBan(user);
+                                setBanReason('');
+                                setBanError(null);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors
+                              border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300
+                              hover:bg-amber-500/20"
+                            >
+                              <Ban className="w-3 h-3" />
+                              Global Ban
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

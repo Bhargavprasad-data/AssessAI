@@ -142,29 +142,33 @@ html.dark .glass-panel-interactive:hover {
 
 /* -- Shimmer Skeleton -- */
 @keyframes shimmer {
-  0%   { background-position: -600px 0; }
-  100% { background-position: 600px 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 .skeleton {
   border-radius: 0.5rem;
   background: linear-gradient(
     90deg,
-    rgba(148,163,184,0.10) 25%,
-    rgba(148,163,184,0.22) 50%,
-    rgba(148,163,184,0.10) 75%
+    rgba(203, 213, 225, 0.45) 0%,
+    rgba(241, 245, 249, 0.95) 35%,
+    rgba(203, 213, 225, 0.45) 70%
   );
-  background-size: 600px 100%;
-  animation: shimmer 1.6s ease-in-out infinite;
+  background-size: 200% 100%;
+  animation: shimmer 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 html.dark .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(255,255,255,0.04) 25%,
-    rgba(255,255,255,0.10) 50%,
-    rgba(255,255,255,0.04) 75%
+    rgba(30, 41, 59, 0.6) 0%,
+    rgba(51, 65, 85, 0.95) 35%,
+    rgba(30, 41, 59, 0.6) 70%
   );
-  background-size: 600px 100%;
-  animation: shimmer 1.6s ease-in-out infinite;
+  background-size: 200% 100%;
+  animation: shimmer 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* ── Auth Page Background Image ── */

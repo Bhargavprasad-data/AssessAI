@@ -6,6 +6,7 @@ import { apiFetch } from '../api/client';
 import type { AuditLogEntry } from '../types';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import { AuditLogsSkeleton } from '../components/common/Skeleton';
 
 export default function AuditLogViewer() {
   const navigate = useNavigate();
@@ -22,8 +23,9 @@ export default function AuditLogViewer() {
   const [showClearAllModal, setShowClearAllModal] = useState(false);
 
   const {
-    data: logs = [],
+    data: logs,
     isLoading,
+    isError,
     refetch,
   } = useQuery<AuditLogEntry[]>({
     queryKey: ['auditLogs', actionFilter, targetTypeFilter],
@@ -34,8 +36,13 @@ export default function AuditLogViewer() {
       params.append('limit', '100');
       return apiFetch<AuditLogEntry[]>(`/api/admin/audit-logs?${params.toString()}`);
     },
-    refetchInterval: 15000,
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
+
+  const showSkeleton = isLoading || isError || !logs;
 
   const deleteLogMutation = useMutation({
     mutationFn: (logId: string) =>
@@ -140,40 +147,36 @@ export default function AuditLogViewer() {
       </div>
 
       {/* ── Logs Table ── */}
-      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700/60">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="text-[11px] uppercase tracking-wider font-semibold border-b
-              bg-slate-100 dark:bg-slate-800/80
-              text-slate-500 dark:text-slate-400
-              border-slate-200 dark:border-slate-700">
-              <tr>
-                <th className="px-5 py-3.5">Timestamp</th>
-                <th className="px-4 py-3.5">Action</th>
-                <th className="px-4 py-3.5">Target Type</th>
-                <th className="px-4 py-3.5">Actor ID</th>
-                <th className="px-4 py-3.5">Target ID</th>
-                <th className="px-4 py-3.5 text-right">Metadata</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50
-              bg-white dark:bg-slate-900/40 text-slate-700 dark:text-slate-300">
-              {isLoading ? (
+      {showSkeleton ? (
+        <AuditLogsSkeleton />
+      ) : (
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700/60">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-[11px] uppercase tracking-wider font-semibold border-b
+                bg-slate-100 dark:bg-slate-800/80
+                text-slate-500 dark:text-slate-400
+                border-slate-200 dark:border-slate-700">
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-slate-400">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-500" />
-                    Loading audit trail...
-                  </td>
+                  <th className="px-5 py-3.5">Timestamp</th>
+                  <th className="px-4 py-3.5">Action</th>
+                  <th className="px-4 py-3.5">Target Type</th>
+                  <th className="px-4 py-3.5">Actor ID</th>
+                  <th className="px-4 py-3.5">Target ID</th>
+                  <th className="px-4 py-3.5 text-right">Metadata</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
-              ) : logs.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-12 text-slate-400">
-                    No audit records match the current filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                logs.map((log) => (
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50
+                bg-white dark:bg-slate-900/40 text-slate-700 dark:text-slate-300">
+                {(logs || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-12 text-slate-400">
+                      No audit records match the current filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  (logs || []).map((log) => (
                   <tr
                     key={log.id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
@@ -254,6 +257,7 @@ export default function AuditLogViewer() {
           </table>
         </div>
       </div>
+    )}
 
       {/* ── JSON Metadata Viewer Modal ── */}
       <Modal

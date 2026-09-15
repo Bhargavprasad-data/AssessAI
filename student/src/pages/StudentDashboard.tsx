@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
-import { Clock, HelpCircle, AlertTriangle, ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Clock, HelpCircle, ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { AssessmentCardSkeleton, PageHeaderSkeleton } from '../components/common/Skeleton';
 
 interface AvailableAssessment {
@@ -21,34 +21,20 @@ export const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const {
-    data: assessments = [],
+    data: assessments,
     isLoading,
     isError,
-    error,
-    refetch,
   } = useQuery<AvailableAssessment[]>({
     queryKey: ['studentAssessments'],
     queryFn: () => apiFetch<AvailableAssessment[]>('/api/student/assessments/available'),
-    retry: (failureCount, err: any) => {
-      const msg = err?.message || '';
-      if (
-        msg.includes('403') ||
-        msg.includes('401') ||
-        msg.includes('Forbidden') ||
-        msg.includes('Unauthorized') ||
-        msg.includes('banned')
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
-    retryDelay: 1500,
-    refetchInterval: (query) => (query.state.status === 'error' ? false : 30000),
-    staleTime: 15000,
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
 
-  // Show skeleton on initial load when no cached data exists
-  const showSkeleton = isLoading && assessments.length === 0;
+  // Continuous shimmer skeleton when loading, offline, erroring, or data not yet available
+  const showSkeleton = isLoading || isError || !assessments;
 
   const handleAction = (item: AvailableAssessment) => {
     if (item.is_banned) return;
@@ -85,46 +71,8 @@ export const StudentDashboard: React.FC = () => {
       {/* Skeleton Grid */}
       {showSkeleton && <AssessmentCardSkeleton />}
 
-      {/* Error banner — only shown when we have cached data to still display */}
-      {isError && assessments.length > 0 && (
-        <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-sm flex items-center space-x-2">
-          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-          <span>Connection lost — showing cached data. Reconnecting…</span>
-        </div>
-      )}
-
-      {/* Error state with no cached data */}
-      {!showSkeleton && isError && assessments.length === 0 && (
-        <div className="rounded-3xl p-12 text-center border border-rose-500/20 bg-rose-50/50 dark:bg-rose-950/20 max-w-lg mx-auto">
-          <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Unable to Load Assessments</h3>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-            {(error as any)?.message || 'Authentication or network error while loading available assessments.'}
-          </p>
-          <div className="mt-6 flex justify-center gap-3">
-            <button
-              onClick={() => refetch()}
-              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-medium text-xs transition-colors cursor-pointer"
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => {
-                localStorage.removeItem('cached_user');
-                localStorage.removeItem('auth_token');
-                localStorage.removeItem('refresh_token');
-                window.location.href = '/login';
-              }}
-              className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs transition-colors cursor-pointer"
-            >
-              Log In Again
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Empty state */}
-      {!showSkeleton && !isError && assessments.length === 0 && (
+      {!showSkeleton && (assessments || []).length === 0 && (
         <div className="rounded-3xl p-12 text-center border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/40">
           <HelpCircle className="w-12 h-12 text-slate-400 dark:text-slate-500 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-slate-900 dark:text-white">No Assessments Available</h3>
@@ -135,7 +83,7 @@ export const StudentDashboard: React.FC = () => {
       )}
 
       {/* Cards grid */}
-      {!showSkeleton && assessments.length > 0 && (
+      {!showSkeleton && assessments && assessments.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {assessments.map((a) => (
             <div

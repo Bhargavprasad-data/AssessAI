@@ -5,31 +5,26 @@ import { apiFetch } from '../api/client';
 import type { Assessment } from '../types';
 import { StatusBadge } from '../components/common/Badge';
 import { AssessmentCardSkeleton, DashboardHeaderSkeleton } from '../components/common/Skeleton';
-import { FileText, Plus, BarChart3, Clock, AlertTriangle, BookOpen } from 'lucide-react';
+import { FileText, Plus, BarChart3, Clock, BookOpen } from 'lucide-react';
 
 export const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const {
-    data: assessments = [],
+    data: assessments,
     isLoading,
     isError,
   } = useQuery<Assessment[]>({
     queryKey: ['teacherAssessments'],
     queryFn: () => apiFetch<Assessment[]>('/api/teacher/assessments'),
-    retry: (failureCount, err: any) => {
-      const msg = err?.message || '';
-      if (msg.includes('403') || msg.includes('401') || msg.includes('Forbidden') || msg.includes('Unauthorized')) {
-        return false;
-      }
-      return failureCount < 2;
-    },
-    retryDelay: 1500,
-    refetchInterval: (query) => (query.state.status === 'error' ? false : 30000),
-    staleTime: 15000,
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
 
-  const showSkeleton = isLoading && assessments.length === 0;
+  // Continuous shimmer skeleton when loading, offline, erroring, or data not yet available
+  const showSkeleton = isLoading || isError || !assessments;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -59,16 +54,8 @@ export const TeacherDashboard: React.FC = () => {
       {/* Skeleton Grid */}
       {showSkeleton && <AssessmentCardSkeleton />}
 
-      {/* Error banner — backend dropped while cached data visible */}
-      {isError && assessments.length > 0 && (
-        <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-sm flex items-center space-x-2">
-          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-          <span>Connection lost — showing cached data. Reconnecting…</span>
-        </div>
-      )}
-
       {/* Empty state */}
-      {!showSkeleton && !isError && assessments.length === 0 && (
+      {!showSkeleton && (assessments || []).length === 0 && (
         <div className="rounded-3xl p-12 text-center border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/40">
           <BookOpen className="w-12 h-12 text-slate-400 dark:text-slate-500 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-slate-900 dark:text-white">No Assessments Created</h3>
@@ -86,7 +73,7 @@ export const TeacherDashboard: React.FC = () => {
       )}
 
       {/* Assessment Grid */}
-      {!showSkeleton && assessments.length > 0 && (
+      {!showSkeleton && assessments && assessments.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {assessments.map((a) => (
             <div

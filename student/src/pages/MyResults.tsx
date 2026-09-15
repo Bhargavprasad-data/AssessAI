@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
 import {
   Trophy, Award, CheckCircle2, Clock, ArrowRight,
-  BarChart3, AlertCircle, FileText, ChevronRight
+  BarChart3, FileText, ChevronRight
 } from 'lucide-react';
 import { DifficultyBadge } from '../components/common/Badge';
+import { PageHeaderSkeleton, ResultsSummarySkeleton, ResultsListSkeleton } from '../components/common/Skeleton';
 
 export interface AttemptSummaryItem {
   id: string;
@@ -27,19 +28,32 @@ export const MyResults: React.FC = () => {
   const navigate = useNavigate();
 
   const {
-    data: attempts = [],
+    data: attempts,
     isLoading,
     isError,
-    error,
-    refetch
   } = useQuery<AttemptSummaryItem[]>({
     queryKey: ['studentAttemptsList'],
     queryFn: () => apiFetch<AttemptSummaryItem[]>('/api/student/attempts'),
-    refetchInterval: 30000,
-    staleTime: 10000,
+    retry: true,
+    retryDelay: 2500,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
   });
 
-  const completedAttempts = attempts.filter(a => a.status === 'submitted' || a.status === 'terminated');
+  // Continuous shimmer skeleton when loading, offline, erroring, or data not yet available
+  const showSkeleton = isLoading || isError || !attempts;
+
+  if (showSkeleton) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <PageHeaderSkeleton />
+        <ResultsSummarySkeleton />
+        <ResultsListSkeleton />
+      </div>
+    );
+  }
+
+  const completedAttempts = (attempts || []).filter(a => a.status === 'submitted' || a.status === 'terminated');
   const totalCompleted = completedAttempts.length;
   const avgScore = totalCompleted > 0
     ? Math.round(completedAttempts.reduce((acc, curr) => acc + (curr.final_score || 0), 0) / totalCompleted)
@@ -47,40 +61,6 @@ export const MyResults: React.FC = () => {
   const bestScore = totalCompleted > 0
     ? Math.max(...completedAttempts.map(a => a.final_score || 0))
     : 0;
-
-  if (isLoading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
-        <div className="h-8 w-64 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
-          ))}
-        </div>
-        <div className="h-64 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center">
-        <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center">
-          <AlertCircle className="w-6 h-6" />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Failed to Load Results</h2>
-        <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-          {(error as any)?.message || 'An error occurred while fetching your assessment results.'}
-        </p>
-        <button
-          onClick={() => refetch()}
-          className="py-2.5 px-5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md transition-colors"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
