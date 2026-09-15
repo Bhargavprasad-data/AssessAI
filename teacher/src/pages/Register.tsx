@@ -23,7 +23,7 @@ export const Register: React.FC = () => {
       await register(name, email, password, 'teacher');
       navigate('/teacher/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Teacher registration failed.');
+      setError(err.message || 'Faculty registration failed.');
     } finally {
       setLoading(false);
     }
@@ -53,10 +53,10 @@ export const Register: React.FC = () => {
             </div>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight dark:text-white text-slate-900">
-            Teacher Registration
+            Faculty Registration
           </h1>
           <p className="dark:text-slate-400 text-slate-500 text-xs sm:text-sm mt-1.5">
-            Create your educator account to author assessments & monitor exams
+            Create your engineering faculty account to author assessments & monitor exams
           </p>
         </div>
 
@@ -80,7 +80,7 @@ export const Register: React.FC = () => {
                 </div>
                 <div className="flex-1">
                   <span className="text-xs font-bold dark:text-white text-slate-900 uppercase tracking-wider">
-                    Teacher / Educator Account
+                    Faculty / Professor Account
                   </span>
                   <p className="text-[11px] dark:text-slate-400 text-slate-500 mt-0.5">
                     Author assessments, generate AI questions & inspect telemetry
@@ -98,21 +98,21 @@ export const Register: React.FC = () => {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Professor Smith"
+                placeholder="Dr. / Prof. Smith"
                 className="w-full px-4 py-2.5 rounded-xl dark:bg-slate-900/60 bg-white border dark:border-white/10 border-slate-300 dark:text-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all text-sm shadow-xs"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider dark:text-slate-300 text-slate-600 mb-1.5">
-                Teacher Email Address
+                Faculty Email Address
               </label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="educator@university.edu"
+                placeholder="faculty@engineering.edu"
                 className="w-full px-4 py-2.5 rounded-xl dark:bg-slate-900/60 bg-white border dark:border-white/10 border-slate-300 dark:text-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all text-sm shadow-xs"
               />
             </div>
@@ -149,14 +149,14 @@ export const Register: React.FC = () => {
               className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-semibold shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all disabled:opacity-50 flex items-center justify-center space-x-2 text-sm mt-2"
             >
               <UserPlus className="w-4 h-4" />
-              <span>{loading ? 'Creating Account...' : 'Complete Teacher Registration'}</span>
+              <span>{loading ? 'Creating Account...' : 'Complete Faculty Registration'}</span>
             </button>
           </form>
 
           <div className="mt-5 text-center text-xs dark:text-slate-400 text-slate-500">
-            Already have a teacher account?{' '}
+            Already have a faculty account?{' '}
             <Link to="/login" className="text-brand-600 dark:text-brand-400 hover:text-brand-500 font-semibold underline">
-              Sign In to Teacher Portal
+              Sign In to Faculty Portal
             </Link>
           </div>
         </div>

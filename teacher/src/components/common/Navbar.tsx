@@ -29,12 +29,12 @@ export const Navbar: React.FC = () => {
                 AssessAI
               </span>
               <span className="hidden sm:inline-block ml-2 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-brand-500/15 text-brand-600 dark:text-brand-300 border border-brand-500/30">
-                Teacher Portal
+                Faculty Portal
               </span>
             </div>
           </Link>
 
-          {/* Teacher Navigation Links */}
+          {/* Faculty Navigation Links */}
           <nav className="flex items-center space-x-1">
             <Link
               to="/teacher/dashboard"
@@ -71,7 +71,7 @@ export const Navbar: React.FC = () => {
             </div>
             <div className="text-left hidden sm:block">
               <p className="text-xs font-semibold dark:text-white text-slate-800 leading-tight">{user.name}</p>
-              <p className="text-[10px] font-medium dark:text-slate-400 text-slate-500 uppercase tracking-wider">Teacher</p>
+              <p className="text-[10px] font-medium dark:text-slate-400 text-slate-500 uppercase tracking-wider">Faculty</p>
             </div>
           </div>
 

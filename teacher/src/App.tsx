@@ -23,7 +23,7 @@ const LoadingScreen: React.FC = () => (
   <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors duration-200">
     <div className="w-10 h-10 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mb-3" />
     <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tracking-wider uppercase">
-      Authenticating Teacher...
+      Authenticating Faculty...
     </span>
   </div>
 );
@@ -39,7 +39,7 @@ const BannedScreen: React.FC = () => {
         </div>
         <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Account Access Revoked</h1>
         <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-          Your teacher account has been suspended by system administration.
+          Your faculty account has been suspended by system administration.
         </p>
         {user?.ban_reason && (
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-300 text-xs text-left">

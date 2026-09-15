@@ -98,7 +98,7 @@ export const Sidebar: React.FC = () => {
                   AssessAI
                 </span>
                 <span className={['block text-[10px] font-semibold uppercase tracking-widest', isDark ? 'text-sky-400' : 'text-sky-600'].join(' ')}>
-                  Teacher Portal
+                  Faculty Portal
                 </span>
               </motion.div>
             )}
@@ -212,7 +212,7 @@ export const Sidebar: React.FC = () => {
                   className="flex-1 min-w-0 overflow-hidden"
                 >
                   <p className={['text-xs font-semibold truncate leading-tight', isDark ? 'text-white' : 'text-slate-800'].join(' ')}>{user.name}</p>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Teacher</p>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Faculty</p>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -56,7 +56,7 @@ export const Login: React.FC = () => {
             </div>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight dark:text-white text-slate-900">
-            Teacher Login
+            Faculty Login
           </h1>
           <p className="dark:text-slate-400 text-slate-500 text-xs sm:text-sm mt-1.5">
             AI Assessment Builder & Telemetry Monitor
@@ -75,14 +75,14 @@ export const Login: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider dark:text-slate-300 text-slate-600 mb-1.5">
-                Teacher Email Address
+                Faculty Email Address
               </label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="teacher@assessai.edu"
+                placeholder="faculty@engineering.edu"
                 className="w-full px-4 py-2.5 rounded-xl dark:bg-slate-900/50 bg-slate-50 border dark:border-white/10 border-slate-300 dark:text-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all text-sm"
               />
             </div>
@@ -118,17 +118,17 @@ export const Login: React.FC = () => {
               className="w-full py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold shadow-lg shadow-brand-500/25 transition-all disabled:opacity-50 flex items-center justify-center space-x-2 mt-2 cursor-pointer"
             >
               <LogIn className="w-4 h-4" />
-              <span>{loading ? 'Authenticating...' : 'Sign In as Teacher'}</span>
+              <span>{loading ? 'Authenticating...' : 'Sign In as Faculty'}</span>
             </button>
           </form>
 
           <div className="mt-6 pt-6 border-t dark:border-white/10 border-slate-200 text-center text-xs dark:text-slate-400 text-slate-500">
-            Don't have a teacher account?{' '}
+            Don't have a faculty account?{' '}
             <Link
               to="/register"
               className="text-brand-600 dark:text-brand-400 hover:text-brand-500 font-semibold underline"
             >
-              Create Teacher Account
+              Register Faculty Account
             </Link>
           </div>
         </div>

@@ -314,7 +314,7 @@ export default function AdminDashboard() {
             >
               <option value="">All Roles</option>
               <option value="student">Students</option>
-              <option value="teacher">Teachers</option>
+              <option value="teacher">Faculty</option>
               <option value="admin">Admins</option>
             </select>
           </div>
@@ -398,7 +398,7 @@ export default function AdminDashboard() {
                                 : 'default'
                           }
                         >
-                          {user.role}
+                          {user.role === 'teacher' ? 'faculty' : user.role}
                         </Badge>
                       </td>
                       <td className="px-4 py-3.5 text-center">
@@ -531,7 +531,7 @@ export default function AdminDashboard() {
               className={inputCls}
             >
               <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
+              <option value="teacher">Faculty</option>
               <option value="admin">Admin</option>
             </select>
           </div>

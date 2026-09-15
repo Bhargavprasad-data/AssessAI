@@ -35,7 +35,7 @@ export const TeacherDashboard: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              Teacher Dashboard
+              Faculty Dashboard
             </h1>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
               Manage course materials, AI-generated pools, and live assessments.
