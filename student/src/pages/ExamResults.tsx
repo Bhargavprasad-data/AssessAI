@@ -376,8 +376,9 @@ export const ExamResults: React.FC = () => {
             }}
             onMouseEnter={() => setIsSearchOpen(true)}
             onMouseLeave={() => {
-              if (!searchQuery.trim() && document.activeElement !== searchInputRef.current) {
+              if (!searchQuery.trim()) {
                 setIsSearchOpen(false);
+                searchInputRef.current?.blur();
               }
             }}
             onClick={() => {
