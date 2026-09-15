@@ -79,3 +79,54 @@ async def test_serving_invariant_and_candidate_exclusion(db_session: AsyncSessio
     # Cannot be the already served question!
     assert next_candidate.id != served_q.id
     assert next_candidate.id in (q1.id, q2.id)
+
+
+@pytest.mark.asyncio
+async def test_unattempted_expired_attempt_allows_fresh_join(db_session: AsyncSession):
+    now = datetime.now(timezone.utc)
+    teacher = User(id=uuid.uuid4(), name="T2", email="t2@inv.com", password_hash="h", role="teacher", created_at=now)
+    student = User(id=uuid.uuid4(), name="S2", email="s2@inv.com", password_hash="h", role="student", created_at=now)
+    db_session.add_all([teacher, student])
+    await db_session.flush()
+
+    mat = CourseMaterial(id=uuid.uuid4(), teacher_id=teacher.id, filename="m2.pdf", storage_path="/tmp/m2.pdf", uploaded_at=now)
+    db_session.add(mat)
+    await db_session.flush()
+
+    q1 = Question(id=uuid.uuid4(), material_id=mat.id, text="Q1?", options=["A", "B", "C", "D"], correct_option_index=0, difficulty="easy", source_chunk_ref="R")
+    db_session.add(q1)
+
+    assessment = Assessment(
+        id=uuid.uuid4(), teacher_id=teacher.id, title="Unattempted Test",
+        status="published", time_limit_seconds=600, max_question_count=5, created_at=now
+    )
+    db_session.add(assessment)
+    await db_session.flush()
+
+    db_session.add(AssessmentQuestion(assessment_id=assessment.id, question_id=q1.id, difficulty=q1.difficulty))
+    await db_session.flush()
+
+    # Pre-existing submitted attempt with 0 answers (expired without student attempting)
+    old_attempt = Attempt(
+        id=uuid.uuid4(), assessment_id=assessment.id, student_id=student.id,
+        started_at=now, last_heartbeat_at=now, status="submitted", completion_reason="time_expired",
+        consent_ack_at=now, active_device_id="d1"
+    )
+    db_session.add(old_attempt)
+    await db_session.commit()
+
+    # Calling join_assessment should clean up the 0-answer attempt and allow joining fresh!
+    from app.api.student import join_assessment
+    from app.schemas.attempt import AttemptJoinRequest
+
+    result = await join_assessment(
+        assessment_id=assessment.id,
+        data=AttemptJoinRequest(consent_ack=True, device_id="d2"),
+        current_student=student,
+        db=db_session
+    )
+
+    assert result["status"] == "in_progress"
+    assert result["attempt_id"] != str(old_attempt.id)
+    assert result["current_question"].question_id == q1.id
+

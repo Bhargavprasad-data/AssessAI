@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func, and_, desc, case
+from sqlalchemy import select, func, and_, desc, case, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -11,6 +11,7 @@ from app.models.assessment import Assessment, AssessmentQuestion, AssessmentBan
 from app.models.attempt import Attempt, AttemptAnswer
 from app.models.question import Question
 from app.models.serving import AttemptQuestionServing
+from app.models.proctoring import Violation
 from app.schemas.assessment import AssessmentOut
 from app.schemas.attempt import (
     AttemptJoinRequest, CurrentQuestionOut, AnswerSubmitRequest,
@@ -96,6 +97,17 @@ async def list_available_assessments(
             ).order_by(desc(Attempt.started_at)).limit(1)
         )
 
+        existing_status = existing_attempt.status if existing_attempt else None
+        existing_id = str(existing_attempt.id) if existing_attempt else None
+
+        if existing_attempt and existing_attempt.status == "submitted":
+            answers_count = await db.scalar(
+                select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == existing_attempt.id)
+            )
+            if not answers_count or answers_count == 0:
+                existing_status = None
+                existing_id = None
+
         results.append({
             "id": str(a.id),
             "title": a.title,
@@ -104,8 +116,8 @@ async def list_available_assessments(
             "max_question_count": a.max_question_count,
             "is_banned": ban is not None,
             "ban_reason": ban.reason if ban else None,
-            "existing_attempt_status": existing_attempt.status if existing_attempt else None,
-            "existing_attempt_id": str(existing_attempt.id) if existing_attempt else None
+            "existing_attempt_status": existing_status,
+            "existing_attempt_id": existing_id
         })
     return results
 
@@ -166,14 +178,25 @@ async def join_assessment(
             started_at = started_at.replace(tzinfo=timezone.utc)
         elapsed = (now - started_at).total_seconds() if started_at else 0
         if elapsed >= assessment.time_limit_seconds:
-            existing_attempt.status = "submitted"
-            existing_attempt.completion_reason = "time_expired"
-            existing_attempt.submitted_at = now
-            existing_attempt.current_question_id = None
-            existing_attempt.current_question_started_at = None
-            await db.commit()
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Exam time has expired.")
+            # Check if student answered any question
+            answers_count = await db.scalar(
+                select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == existing_attempt.id)
+            )
+            if not answers_count or answers_count == 0:
+                # Student never answered any question; remove stale unattempted attempt and continue to create a fresh one!
+                await db.delete(existing_attempt)
+                await db.flush()
+                existing_attempt = None
+            else:
+                existing_attempt.status = "submitted"
+                existing_attempt.completion_reason = "time_expired"
+                existing_attempt.submitted_at = now
+                existing_attempt.current_question_id = None
+                existing_attempt.current_question_started_at = None
+                await db.commit()
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Exam time has expired.")
 
+    if existing_attempt:
         # Handle device switch if reconnecting from new device
         if existing_attempt.active_device_id != data.device_id:
             await record_device_switch(db, existing_attempt, assessment, data.device_id)
@@ -213,19 +236,28 @@ async def join_assessment(
             )
         }
 
-    # Verify no already submitted attempt
-    completed_attempt = await db.scalar(
+    # Verify no already submitted attempt (with actual answers)
+    completed_attempts = (await db.scalars(
         select(Attempt).where(
             Attempt.assessment_id == assessment.id,
             Attempt.student_id == current_student.id,
             Attempt.status == "submitted"
+        ).order_by(desc(Attempt.started_at))
+    )).all()
+
+    for comp in completed_attempts:
+        answers_count = await db.scalar(
+            select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == comp.id)
         )
-    )
-    if completed_attempt:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You have already completed or finalized this assessment."
-        )
+        if answers_count and answers_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You have already completed or finalized this assessment."
+            )
+        else:
+            # Student never answered any question: clean up empty 0-answer attempt and let them take the exam!
+            await db.delete(comp)
+            await db.flush()
 
     # Initialize new attempt
     new_attempt = Attempt(
