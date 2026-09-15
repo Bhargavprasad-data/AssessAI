@@ -281,8 +281,16 @@ export const AssessmentManager: React.FC = () => {
                 </select>
               </div>
 
-              {/* Expandable / Pop-up Animated Search Bar */}
-              <div className="relative flex items-center">
+              {/* Expandable / Pop-up Animated Search Bar with Hover-to-Open */}
+              <div
+                className="relative flex items-center"
+                onMouseEnter={() => setIsSearchOpen(true)}
+                onMouseLeave={() => {
+                  if (!searchQuery.trim() && document.activeElement !== searchInputRef.current) {
+                    setIsSearchOpen(false);
+                  }
+                }}
+              >
                 <AnimatePresence initial={false} mode="wait">
                   {isSearchOpen ? (
                     <motion.div
@@ -300,6 +308,12 @@ export const AssessmentManager: React.FC = () => {
                         placeholder="Search by title, faculty, or ID..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
+                        onFocus={() => setIsSearchOpen(true)}
+                        onBlur={() => {
+                          if (!searchQuery.trim()) {
+                            setIsSearchOpen(false);
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') {
                             if (searchQuery) setSearchQuery('');
@@ -330,7 +344,7 @@ export const AssessmentManager: React.FC = () => {
                       type="button"
                       onClick={() => setIsSearchOpen(true)}
                       className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950/60 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 transition-all shadow-xs cursor-pointer group hover:border-brand-500/40"
-                      title="Click to search tests"
+                      title="Hover to search tests"
                     >
                       <Search className="w-4 h-4 text-brand-500 group-hover:scale-110 transition-transform" />
                       <span>{searchQuery ? `Searching: "${searchQuery.slice(0, 14)}..."` : 'Search Tests'}</span>
