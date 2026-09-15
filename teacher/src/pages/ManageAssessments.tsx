@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Trash2,
   AlertTriangle,
@@ -31,9 +32,17 @@ export const ManageAssessments: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [assessmentToDelete, setAssessmentToDelete] = useState<Assessment | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isSearchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isSearchOpen]);
 
   const {
     data: assessments,
@@ -244,26 +253,65 @@ export const ManageAssessments: React.FC = () => {
             </button>
           </div>
 
-          {/* Search Bar */}
-          <div className="relative min-w-[260px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search tests by title or ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-9 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all shadow-sm"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                title="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+          {/* Expandable / Pop-up Animated Search Bar */}
+          <div className="relative flex items-center">
+            <AnimatePresence initial={false} mode="wait">
+              {isSearchOpen ? (
+                <motion.div
+                  key="open-search"
+                  initial={{ width: 44, opacity: 0, scale: 0.95 }}
+                  animate={{ width: 280, opacity: 1, scale: 1 }}
+                  exit={{ width: 44, opacity: 0, scale: 0.95 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                  className="relative flex items-center"
+                >
+                  <Search className="w-4 h-4 text-brand-500 absolute left-3.5 pointer-events-none" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search tests by title or ID..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        if (searchQuery) setSearchQuery('');
+                        else setIsSearchOpen(false);
+                      }
+                    }}
+                    className="w-full pl-10 pr-9 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-950 border border-brand-500/50 dark:border-brand-400/50 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all shadow-md"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setIsSearchOpen(false);
+                    }}
+                    className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Close search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.button
+                  key="closed-search"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.15 }}
+                  type="button"
+                  onClick={() => setIsSearchOpen(true)}
+                  className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950/60 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 transition-all shadow-xs cursor-pointer group hover:border-brand-500/40"
+                  title="Click to search tests"
+                >
+                  <Search className="w-4 h-4 text-brand-500 group-hover:scale-110 transition-transform" />
+                  <span>{searchQuery ? `Searching: "${searchQuery.slice(0, 14)}..."` : 'Search Tests'}</span>
+                  {searchQuery && (
+                    <span className="w-2 h-2 rounded-full bg-brand-500 animate-pulse ml-1" />
+                  )}
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       )}
