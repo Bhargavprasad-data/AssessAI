@@ -115,18 +115,19 @@ async def test_unattempted_expired_attempt_allows_fresh_join(db_session: AsyncSe
     db_session.add(old_attempt)
     await db_session.commit()
 
-    # Calling join_assessment should clean up the 0-answer attempt and allow joining fresh!
+    # Calling join_assessment should reject because student already completed/submitted this assessment
     from app.api.student import join_assessment
     from app.schemas.attempt import AttemptJoinRequest
+    from fastapi import HTTPException
 
-    result = await join_assessment(
-        assessment_id=assessment.id,
-        data=AttemptJoinRequest(consent_ack=True, device_id="d2"),
-        current_student=student,
-        db=db_session
-    )
+    with pytest.raises(HTTPException) as exc_info:
+        await join_assessment(
+            assessment_id=assessment.id,
+            data=AttemptJoinRequest(consent_ack=True, device_id="d2"),
+            current_student=student,
+            db=db_session
+        )
 
-    assert result["status"] == "in_progress"
-    assert result["attempt_id"] != str(old_attempt.id)
-    assert result["current_question"].question_id == q1.id
+    assert exc_info.value.status_code == 400
+    assert "already completed" in exc_info.value.detail
 

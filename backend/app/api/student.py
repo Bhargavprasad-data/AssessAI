@@ -100,14 +100,7 @@ async def list_available_assessments(
         existing_status = existing_attempt.status if existing_attempt else None
         existing_id = str(existing_attempt.id) if existing_attempt else None
 
-        if existing_attempt and existing_attempt.status == "submitted":
-            answers_count = await db.scalar(
-                select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == existing_attempt.id)
-            )
-            if not answers_count or answers_count == 0:
-                existing_status = None
-                existing_id = None
-        elif existing_attempt and existing_attempt.status == "terminated" and ban is None:
+        if existing_attempt and existing_attempt.status == "terminated" and ban is None:
             # Student is unbanned/eligible to resume
             existing_status = "in_progress"
 
@@ -188,23 +181,14 @@ async def join_assessment(
             started_at = started_at.replace(tzinfo=timezone.utc)
         elapsed = (now - started_at).total_seconds() if started_at else 0
         if elapsed >= assessment.time_limit_seconds:
-            # Check if student answered any question
-            answers_count = await db.scalar(
-                select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == existing_attempt.id)
-            )
-            if not answers_count or answers_count == 0:
-                # Student never answered any question; remove stale unattempted attempt and continue to create a fresh one!
-                await db.delete(existing_attempt)
-                await db.flush()
-                existing_attempt = None
-            else:
-                existing_attempt.status = "submitted"
-                existing_attempt.completion_reason = "time_expired"
-                existing_attempt.submitted_at = now
-                existing_attempt.current_question_id = None
-                existing_attempt.current_question_started_at = None
-                await db.commit()
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Exam time has expired.")
+            existing_attempt.status = "submitted"
+            existing_attempt.completion_reason = "time_expired"
+            existing_attempt.submitted_at = now
+            existing_attempt.current_question_id = None
+            existing_attempt.current_question_started_at = None
+            existing_attempt.final_score = await calculate_final_score(db, existing_attempt, assessment)
+            await db.commit()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Exam time has expired.")
 
     if existing_attempt:
         # Handle device switch if reconnecting from new device
@@ -246,28 +230,19 @@ async def join_assessment(
             )
         }
 
-    # Verify no already submitted attempt (with actual answers)
-    completed_attempts = (await db.scalars(
+    # Verify student does not have an existing submitted attempt
+    completed_attempt = await db.scalar(
         select(Attempt).where(
             Attempt.assessment_id == assessment.id,
             Attempt.student_id == current_student.id,
             Attempt.status == "submitted"
-        ).order_by(desc(Attempt.started_at))
-    )).all()
-
-    for comp in completed_attempts:
-        answers_count = await db.scalar(
-            select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == comp.id)
+        ).limit(1)
+    )
+    if completed_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already completed or finalized this assessment."
         )
-        if answers_count and answers_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You have already completed or finalized this assessment."
-            )
-        else:
-            # Student never answered any question: clean up empty 0-answer attempt and let them take the exam!
-            await db.delete(comp)
-            await db.flush()
 
     # Initialize new attempt
     new_attempt = Attempt(

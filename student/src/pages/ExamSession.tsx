@@ -134,14 +134,27 @@ export const ExamSession: React.FC = () => {
     },
   });
 
-  useEffect(() => {
-    if (setupVideoRef.current) {
-      setupVideoRef.current.srcObject = cameraStream;
-      if (cameraStream) {
-        setupVideoRef.current.play().catch(() => {});
+  const attachSetupVideoRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      setupVideoRef.current = node;
+      if (node && cameraStream) {
+        if (node.srcObject !== cameraStream) {
+          node.srcObject = cameraStream;
+        }
+        node.play().catch(() => {});
       }
+    },
+    [cameraStream]
+  );
+
+  useEffect(() => {
+    if (setupVideoRef.current && cameraStream) {
+      if (setupVideoRef.current.srcObject !== cameraStream) {
+        setupVideoRef.current.srcObject = cameraStream;
+      }
+      setupVideoRef.current.play().catch(() => {});
     }
-  }, [cameraStream]);
+  }, [cameraStream, isCameraActive]);
 
   const submittingRef = useRef<boolean>(false);
   const currentQuestionRef = useRef<CurrentQuestion | null>(null);
@@ -577,7 +590,7 @@ export const ExamSession: React.FC = () => {
               <div className="mt-3 p-3 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center space-x-3">
                 <div className="w-24 h-16 rounded-lg overflow-hidden bg-slate-900 border border-emerald-500/40 relative flex-shrink-0">
                   <video
-                    ref={setupVideoRef}
+                    ref={attachSetupVideoRef}
                     autoPlay
                     playsInline
                     muted

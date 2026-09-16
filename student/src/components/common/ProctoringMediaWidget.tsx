@@ -69,13 +69,29 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragStart = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
 
-  // Attach camera stream
+  // Attach camera stream callback ref
+  const attachVideoRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      videoRef.current = node;
+      if (node && cameraStream) {
+        if (node.srcObject !== cameraStream) {
+          node.srcObject = cameraStream;
+        }
+        node.play().catch(() => {});
+      }
+    },
+    [cameraStream]
+  );
+
+  // Re-attach camera stream whenever stream updates or widget is maximized
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = cameraStream;
-      if (cameraStream) videoRef.current.play().catch(() => {});
+    if (!isMinimized && videoRef.current && cameraStream) {
+      if (videoRef.current.srcObject !== cameraStream) {
+        videoRef.current.srcObject = cameraStream;
+      }
+      videoRef.current.play().catch(() => {});
     }
-  }, [cameraStream]);
+  }, [cameraStream, isMinimized, isCameraActive]);
 
   // Drag
   const onMouseDown = useCallback((e: React.MouseEvent) => {
@@ -198,7 +214,7 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             {isCameraActive && cameraStream ? (
               <video
                 id="proctoring-live-video"
-                ref={videoRef}
+                ref={attachVideoRef}
                 autoPlay
                 playsInline
                 muted
