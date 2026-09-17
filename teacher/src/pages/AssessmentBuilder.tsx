@@ -53,7 +53,7 @@ export const AssessmentBuilder: React.FC = () => {
 
   // Assessment Config State
   const [title, setTitle] = useState('New Adaptive Assessment');
-  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | ''>(30); // in minutes, default 30 min
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | ''>(60); // in minutes, default 60 min
   const [perQuestionLimit, setPerQuestionLimit] = useState<number | '' | undefined>(60);
   const [fastThreshold, setFastThreshold] = useState<number | ''>(30);
   const [enableSpeedAdaptive, setEnableSpeedAdaptive] = useState(true);
@@ -498,6 +498,12 @@ export const AssessmentBuilder: React.FC = () => {
 
   // Save or Publish Assessment
   const handleSaveAssessment = async (publishNow: boolean, overrideSufficiency: boolean = false) => {
+    if (publishNow && selectedQuestionIds.size === 0) {
+      showToast('error', 'Cannot publish an assessment with zero questions. Please select or generate questions into the pool first.');
+      setActiveTab('questions');
+      return;
+    }
+
     setSaving(true);
 
     const finalMaxCount = typeof maxQuestionCount === 'number' ? maxQuestionCount : 6;
@@ -1465,25 +1471,44 @@ export const AssessmentBuilder: React.FC = () => {
             <AlertTriangle className="w-6 h-6" />
           </div>
           <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Insufficient Question Pool</h4>
-          <p className="text-xs text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
-            Your assessment pool has only <strong>{sufficiencyWarning?.total_eligible}</strong> eligible questions, but requires <strong>{sufficiencyWarning?.required}</strong>.
-            Publishing is blocked by default to ensure adaptive paths are well-stocked.
-          </p>
+          {sufficiencyWarning?.total_eligible === 0 ? (
+            <>
+              <p className="text-xs text-rose-600 dark:text-rose-400 mb-6 leading-relaxed">
+                Your question pool is completely empty (<strong>0 questions</strong>). An assessment must have at least one question before it can be published.
+              </p>
+              <button
+                onClick={() => {
+                  setSufficiencyWarning(null);
+                  setActiveTab('questions');
+                }}
+                className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-md"
+              >
+                Go to Question Pool
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
+                Your assessment pool has only <strong>{sufficiencyWarning?.total_eligible}</strong> eligible questions, but requires <strong>{sufficiencyWarning?.required}</strong>.
+                Publishing is blocked by default to ensure adaptive paths are well-stocked.
+              </p>
 
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setSufficiencyWarning(null)}
-              className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-300 dark:border-white/10"
-            >
-              Add More Questions
-            </button>
-            <button
-              onClick={() => handleSaveAssessment(true, true)}
-              className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold"
-            >
-              Explicit Override & Publish
-            </button>
-          </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => setSufficiencyWarning(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-300 dark:border-white/10"
+                >
+                  Add More Questions
+                </button>
+                <button
+                  onClick={() => handleSaveAssessment(true, true)}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold"
+                >
+                  Explicit Override & Publish
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 

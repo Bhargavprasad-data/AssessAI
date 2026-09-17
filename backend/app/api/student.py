@@ -149,6 +149,21 @@ async def join_assessment(
             detail=f"You are barred from this assessment due to a prior proctoring violation. Reason: {ban.reason}"
         )
 
+    # Pre-check: Ensure assessment has active questions in its pool before proceeding
+    active_q_count = await db.scalar(
+        select(func.count(AssessmentQuestion.question_id))
+        .join(Question, Question.id == AssessmentQuestion.question_id)
+        .where(
+            AssessmentQuestion.assessment_id == assessment.id,
+            Question.retired_at.is_(None)
+        )
+    ) or 0
+    if active_q_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assessment question pool has no available questions. Please contact your instructor."
+        )
+
     now = datetime.now(timezone.utc)
 
     # Reconnect / Resume check
@@ -181,14 +196,25 @@ async def join_assessment(
             started_at = started_at.replace(tzinfo=timezone.utc)
         elapsed = (now - started_at).total_seconds() if started_at else 0
         if elapsed >= assessment.time_limit_seconds:
-            existing_attempt.status = "submitted"
-            existing_attempt.completion_reason = "time_expired"
-            existing_attempt.submitted_at = now
-            existing_attempt.current_question_id = None
-            existing_attempt.current_question_started_at = None
-            existing_attempt.final_score = await calculate_final_score(db, existing_attempt, assessment)
-            await db.commit()
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Exam time has expired.")
+            # Check if student actually answered any question
+            existing_answers_count = await db.scalar(
+                select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == existing_attempt.id)
+            ) or 0
+            if existing_answers_count == 0:
+                # Student never answered any questions (e.g. stale/unattempted session opened earlier)
+                # Remove unattempted phantom session and allow student to start fresh!
+                await db.delete(existing_attempt)
+                await db.flush()
+                existing_attempt = None
+            else:
+                existing_attempt.status = "submitted"
+                existing_attempt.completion_reason = "time_expired"
+                existing_attempt.submitted_at = now
+                existing_attempt.current_question_id = None
+                existing_attempt.current_question_started_at = None
+                existing_attempt.final_score = await calculate_final_score(db, existing_attempt, assessment)
+                await db.commit()
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Exam time has expired.")
 
     if existing_attempt:
         # Handle device switch if reconnecting from new device
@@ -207,7 +233,7 @@ async def join_assessment(
             current_q = await serve_first_question_if_needed(db, existing_attempt, assessment)
 
         if not current_q:
-            await db.commit()
+            await db.rollback()
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No questions available in pool.")
 
         aq = await db.scalar(
@@ -230,19 +256,29 @@ async def join_assessment(
             )
         }
 
-    # Verify student does not have an existing submitted attempt
-    completed_attempt = await db.scalar(
+    # Verify student does not have an existing submitted attempt (with actual answers)
+    completed_attempts = (await db.scalars(
         select(Attempt).where(
             Attempt.assessment_id == assessment.id,
             Attempt.student_id == current_student.id,
             Attempt.status == "submitted"
-        ).limit(1)
-    )
-    if completed_attempt:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You have already completed or finalized this assessment."
-        )
+        ).order_by(desc(Attempt.started_at))
+    )).all()
+
+    for comp in completed_attempts:
+        comp_answers_count = await db.scalar(
+            select(func.count(AttemptAnswer.id)).where(AttemptAnswer.attempt_id == comp.id)
+        ) or 0
+        if comp_answers_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You have already completed or finalized this assessment."
+            )
+        else:
+            # Student never answered any question (e.g. empty pool error or unattempted phantom session):
+            # Clean up empty 0-answer attempt and let them take the exam!
+            await db.delete(comp)
+            await db.flush()
 
     # Initialize new attempt
     new_attempt = Attempt(
@@ -265,7 +301,7 @@ async def join_assessment(
     # Serve first question using atomic invariant
     first_q = await serve_first_question_if_needed(db, new_attempt, assessment)
     if not first_q:
-        await db.commit()
+        await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assessment question pool has no available questions.")
 
     aq = await db.scalar(

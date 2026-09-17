@@ -115,19 +115,99 @@ async def test_unattempted_expired_attempt_allows_fresh_join(db_session: AsyncSe
     db_session.add(old_attempt)
     await db_session.commit()
 
-    # Calling join_assessment should reject because student already completed/submitted this assessment
+    # Calling join_assessment should clean up the 0-answer unattempted attempt and allow joining fresh!
     from app.api.student import join_assessment
     from app.schemas.attempt import AttemptJoinRequest
     from fastapi import HTTPException
+    from app.models.attempt import AttemptAnswer
+
+    result = await join_assessment(
+        assessment_id=assessment.id,
+        data=AttemptJoinRequest(consent_ack=True, device_id="d2"),
+        current_student=student,
+        db=db_session
+    )
+
+    assert result["status"] == "in_progress"
+    assert result["attempt_id"] != str(old_attempt.id)
+    assert result["current_question"].question_id == q1.id
+
+    # Now attach answer to that attempt and mark it submitted:
+    new_att = await db_session.get(Attempt, uuid.UUID(result["attempt_id"]))
+    new_att.status = "submitted"
+    new_att.completion_reason = "time_expired"
+    ans = AttemptAnswer(
+        id=uuid.uuid4(), attempt_id=new_att.id, question_id=q1.id,
+        selected_option_index=0, is_correct=True, response_time_ms=5000,
+        difficulty_at_time="easy", submitted_at=now
+    )
+    db_session.add(ans)
+    await db_session.commit()
 
     with pytest.raises(HTTPException) as exc_info:
         await join_assessment(
             assessment_id=assessment.id,
-            data=AttemptJoinRequest(consent_ack=True, device_id="d2"),
+            data=AttemptJoinRequest(consent_ack=True, device_id="d3"),
             current_student=student,
             db=db_session
         )
-
     assert exc_info.value.status_code == 400
     assert "already completed" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_empty_pool_join_and_publish_blocked(db_session: AsyncSession):
+    from app.api.student import join_assessment
+    from app.api.teacher import publish_assessment
+    from app.schemas.attempt import AttemptJoinRequest
+    from app.schemas.assessment import AssessmentPublishRequest
+    from fastapi import HTTPException
+
+    now = datetime.now(timezone.utc)
+    teacher = User(id=uuid.uuid4(), name="T3", email="t3@inv.com", password_hash="h", role="teacher", created_at=now)
+    student = User(id=uuid.uuid4(), name="S3", email="s3@inv.com", password_hash="h", role="student", created_at=now)
+    db_session.add_all([teacher, student])
+    await db_session.flush()
+
+    # Create assessment with 0 questions in draft status
+    empty_assessment = Assessment(
+        id=uuid.uuid4(), teacher_id=teacher.id, title="Empty Pool Test",
+        status="draft", time_limit_seconds=600, max_question_count=5, created_at=now
+    )
+    db_session.add(empty_assessment)
+    await db_session.commit()
+
+    # 1. Publishing with 0 questions must be blocked even with override_sufficiency=True!
+    with pytest.raises(HTTPException) as pub_exc:
+        await publish_assessment(
+            assessment_id=empty_assessment.id,
+            publish_req=AssessmentPublishRequest(override_sufficiency=True),
+            current_teacher=teacher,
+            db=db_session
+        )
+    assert pub_exc.value.status_code == 400
+    assert "zero questions" in pub_exc.value.detail
+
+    # Now simulate assessment being published, but having 0 questions:
+    empty_assessment.status = "published"
+    await db_session.commit()
+
+    # 2. Joining must fail with 400 and clear message without creating any attempt
+    with pytest.raises(HTTPException) as join_exc:
+        await join_assessment(
+            assessment_id=empty_assessment.id,
+            data=AttemptJoinRequest(consent_ack=True, device_id="d1"),
+            current_student=student,
+            db=db_session
+        )
+    assert join_exc.value.status_code == 400
+    assert "no available questions" in join_exc.value.detail.lower()
+
+    # Invariant: No attempt row was created or committed
+    attempts = (await db_session.scalars(
+        select(Attempt).where(Attempt.assessment_id == empty_assessment.id)
+    )).all()
+    assert len(attempts) == 0
+    assert empty_assessment.config_locked is False
+
 

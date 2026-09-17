@@ -73,12 +73,6 @@ async def serve_first_question_if_needed(
         target_difficulty="easy"
     )
     if not first_q:
-        attempt.status = "submitted"
-        attempt.completion_reason = "no_questions_remaining"
-        attempt.submitted_at = datetime.now(timezone.utc)
-        attempt.current_question_id = None
-        attempt.current_question_started_at = None
-        attempt.final_score = 0.0
         return None
 
     now = datetime.now(timezone.utc)

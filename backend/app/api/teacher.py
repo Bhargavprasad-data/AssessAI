@@ -1066,6 +1066,12 @@ async def publish_assessment(
             warnings.append(f"Insufficient active questions for difficulty '{diff}': found {count}, recommended >= 3.")
 
     total_eligible = sum(diff_counts.values())
+    if total_eligible == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot publish an assessment with zero questions. Please add questions to the question pool before publishing."
+        )
+
     if total_eligible < assessment.max_question_count and not (publish_req and publish_req.override_sufficiency):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
