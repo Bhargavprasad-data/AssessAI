@@ -115,16 +115,24 @@ export const AssessmentBuilder: React.FC = () => {
   const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const isDraftLoadedRef = useRef(false);
+  const isFetchingQuestionsRef = useRef(false);
+  const selectedMaterialIdsRef = useRef(selectedMaterialIds);
+  selectedMaterialIdsRef.current = selectedMaterialIds;
+  const jobIdRef = useRef(jobId);
+  jobIdRef.current = jobId;
   const DRAFT_STORAGE_KEY = 'assessai_assessment_builder_draft';
 
-  // Load questions for all selected materials (merges unique questions into pool)
+  // Load questions for all selected materials (stable callback with in-flight guard)
   const loadQuestionsForSelectedMaterials = useCallback(async (targetJobId?: string | null, targetMatIds?: string[]) => {
-    try {
-      const matIds = targetMatIds && targetMatIds.length > 0 ? targetMatIds : Array.from(selectedMaterialIds);
-      if (matIds.length === 0) return;
+    if (isFetchingQuestionsRef.current) return;
 
+    const matIds = targetMatIds && targetMatIds.length > 0 ? targetMatIds : Array.from(selectedMaterialIdsRef.current);
+    if (matIds.length === 0) return;
+
+    isFetchingQuestionsRef.current = true;
+    try {
       const payload: any = { material_ids: matIds, include_retired: false };
-      const effectiveJobId = targetJobId || jobId;
+      const effectiveJobId = targetJobId || jobIdRef.current;
       if (effectiveJobId) {
         payload.job_id = effectiveJobId;
       }
@@ -138,20 +146,28 @@ export const AssessmentBuilder: React.FC = () => {
           if (prev.length === 0) return qList;
           const existingIds = new Set(prev.map(q => q.id));
           const toAdd = qList.filter(q => !existingIds.has(q.id));
-          return [...prev, ...toAdd];
+          return toAdd.length === 0 ? prev : [...prev, ...toAdd];
         });
         setSelectedQuestionIds(prev => {
           const next = new Set(prev);
-          qList.forEach((q: Question) => next.add(q.id));
-          return next;
+          let changed = false;
+          qList.forEach((q: Question) => {
+            if (!next.has(q.id)) {
+              next.add(q.id);
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
         });
       }
     } catch (err: any) {
       console.warn('Could not load questions for materials:', err);
+    } finally {
+      isFetchingQuestionsRef.current = false;
     }
-  }, [selectedMaterialIds, jobId]);
+  }, []); // Empty dependency array: completely stable across renders
 
-  // 1. Restore draft on mount when creating a new assessment
+  // 1. Restore draft on mount when creating a new assessment (runs ONCE on mount)
   useEffect(() => {
     if (assessmentId) return;
 
@@ -201,11 +217,6 @@ export const AssessmentBuilder: React.FC = () => {
             setJobId(saved.jobId);
             setJobStatus(saved.jobStatus || 'queued');
           }
-
-          // Background sync questions from backend if materials were selected
-          if (saved.selectedMaterialIds && saved.selectedMaterialIds.length > 0) {
-            loadQuestionsForSelectedMaterials(saved.jobId || null, saved.selectedMaterialIds);
-          }
         }
       }
     } catch (err) {
@@ -213,7 +224,7 @@ export const AssessmentBuilder: React.FC = () => {
     } finally {
       isDraftLoadedRef.current = true;
     }
-  }, [assessmentId, loadQuestionsForSelectedMaterials]);
+  }, []); // Run strictly once on mount
 
   // 2. Auto-save draft to localStorage whenever builder state changes
   useEffect(() => {
@@ -298,45 +309,24 @@ export const AssessmentBuilder: React.FC = () => {
     showToast('success', 'Draft discarded. Starting fresh assessment.');
   };
 
-  // Load existing materials from library on mount + auto-recover if empty
+  // Load existing materials from library on mount (runs strictly once)
   useEffect(() => {
+    let isMounted = true;
     const loadLibrary = async () => {
       try {
         const list = await apiFetch<UploadedMaterialItem[]>('/api/teacher/materials');
+        if (!isMounted) return;
         const dedupedList = deduplicateMaterials(list);
         setLibraryMaterials(dedupedList);
-
-        // Intelligent Recovery: If creating a new assessment, and no questions/materials are loaded in draft
-        if (!assessmentId) {
-          const savedDraftRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
-          if (!savedDraftRaw && dedupedList.length > 0) {
-            // Check if the most recent material in library has questions in the database
-            const recentMat = dedupedList[0];
-            try {
-              const qBatch = await apiFetch<Question[]>('/api/teacher/materials/questions-batch', {
-                method: 'POST',
-                body: JSON.stringify({ material_ids: [recentMat.id], include_retired: false }),
-              });
-              if (qBatch && qBatch.length > 0) {
-                setMaterials([recentMat]);
-                setSelectedMaterialIds(new Set([recentMat.id]));
-                setQuestions(qBatch);
-                setSelectedQuestionIds(new Set(qBatch.map(q => q.id)));
-                setActiveTab('questions');
-                setHasRestoredDraft(true);
-                showToast('success', `Restored ${qBatch.length} questions from "${recentMat.filename}".`);
-              }
-            } catch (batchErr) {
-              console.warn('Could not auto-recover recent questions:', batchErr);
-            }
-          }
-        }
       } catch (err) {
         // Silently handle
       }
     };
     loadLibrary();
-  }, [assessmentId]);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Load existing assessment & its assigned questions when editing
   useEffect(() => {
@@ -440,7 +430,7 @@ export const AssessmentBuilder: React.FC = () => {
       isSubscribed = false;
       clearInterval(interval);
     };
-  }, [jobId, jobStatus, loadQuestionsForSelectedMaterials]);
+  }, [jobId, jobStatus]);
 
   // Multiple PDF Upload Handler
   const uploadFiles = async (filesToUpload: FileList | File[]) => {
