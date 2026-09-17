@@ -836,6 +836,8 @@ async def create_assessment(
         promotion_rules=data.promotion_rules,
         ban_on_violation_breach=data.ban_on_violation_breach,
         device_switch_as_violation=data.device_switch_as_violation,
+        scheduled_start_at=data.scheduled_start_at,
+        scheduled_end_at=data.scheduled_end_at,
         status="draft",
         created_at=datetime.now(timezone.utc),
         config_locked=False
@@ -986,8 +988,9 @@ async def update_assessment(
         )
 
     for field, val in data.model_dump(exclude_unset=True).items():
-        if field != "question_ids" and hasattr(assessment, field) and val is not None:
-            setattr(assessment, field, val)
+        if field != "question_ids" and hasattr(assessment, field):
+            if val is not None or field in ("scheduled_start_at", "scheduled_end_at", "per_question_time_limit_seconds"):
+                setattr(assessment, field, val)
 
     if data.question_ids is not None:
         # Replace question pool

@@ -5,7 +5,7 @@ import { apiFetch } from '../api/client';
 import type { Assessment } from '../types';
 import { StatusBadge } from '../components/common/Badge';
 import { AssessmentCardSkeleton, DashboardHeaderSkeleton } from '../components/common/Skeleton';
-import { FileText, Plus, BarChart3, Clock, BookOpen } from 'lucide-react';
+import { FileText, Plus, BarChart3, Clock, BookOpen, Calendar } from 'lucide-react';
 
 export const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -100,6 +100,18 @@ export const TeacherDashboard: React.FC = () => {
                   <div className="flex items-center space-x-2">
                     <Clock className="w-4 h-4 text-slate-400" />
                     <span>Duration: {Math.floor(a.time_limit_seconds / 60)} min</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                    <span className={a.scheduled_end_at ? "text-indigo-600 dark:text-indigo-400 font-medium" : "text-slate-500 dark:text-slate-400"}>
+                      {a.scheduled_start_at || a.scheduled_end_at ? (
+                        <>
+                          Window: {a.scheduled_start_at ? new Date(a.scheduled_start_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + new Date(a.scheduled_start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Open'} – {a.scheduled_end_at ? new Date(a.scheduled_end_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + new Date(a.scheduled_end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No deadline'}
+                        </>
+                      ) : (
+                        'Window: Open Anytime'
+                      )}
+                    </span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <FileText className="w-4 h-4 text-slate-400" />

@@ -42,6 +42,8 @@ export interface Assessment {
   status: 'draft' | 'published' | 'closed';
   created_at: string;
   config_locked: boolean;
+  scheduled_start_at?: string | null;
+  scheduled_end_at?: string | null;
   question_count?: number;
   attempts_count?: number;
   active_attempts_count?: number;

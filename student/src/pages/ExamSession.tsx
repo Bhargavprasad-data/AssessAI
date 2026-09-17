@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   ShieldAlert, Clock, AlertTriangle, ArrowRight, EyeOff, Maximize, Minimize,
   Camera, Mic, Monitor, CheckCircle2, Smartphone, ListChecks, ShieldCheck,
-  Send, FileText, RotateCcw
+  Send, FileText, RotateCcw, Calendar, Lock
 } from 'lucide-react';
 
 export const ExamSession: React.FC = () => {
@@ -25,6 +25,7 @@ export const ExamSession: React.FC = () => {
   // State
   const [hasConsented, setHasConsented] = useState<boolean>(false);
   const [consentChecked, setConsentChecked] = useState<boolean>(false);
+  const [assessmentMeta, setAssessmentMeta] = useState<any | null>(null);
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -312,10 +313,16 @@ export const ExamSession: React.FC = () => {
 
         const currentAssessment = assessments.find((a) => a.id === assessmentId);
         if (currentAssessment) {
+          setAssessmentMeta(currentAssessment);
+          // Only auto-resume if not expired and not upcoming
           if (
-            currentAssessment.existing_attempt_status === 'in_progress' ||
-            currentAssessment.existing_attempt_status === 'disconnected' ||
-            (!currentAssessment.is_banned && currentAssessment.existing_attempt_status === 'terminated')
+            !currentAssessment.is_expired &&
+            !currentAssessment.is_upcoming &&
+            (
+              currentAssessment.existing_attempt_status === 'in_progress' ||
+              currentAssessment.existing_attempt_status === 'disconnected' ||
+              (!currentAssessment.is_banned && currentAssessment.existing_attempt_status === 'terminated')
+            )
           ) {
             setConsentChecked(true);
             try {
@@ -360,6 +367,14 @@ export const ExamSession: React.FC = () => {
   // Join / Start Attempt after consent
   const handleJoinAttempt = async () => {
     if (!consentChecked) return;
+    if (assessmentMeta?.is_expired) {
+      setError('This exam attempt window has closed. You cannot attempt this exam.');
+      return;
+    }
+    if (assessmentMeta?.is_upcoming) {
+      setError('This exam is not open yet. Please wait until the scheduled start time.');
+      return;
+    }
     setError(null);
     setSubmitting(true);
 
@@ -501,6 +516,9 @@ export const ExamSession: React.FC = () => {
   // 1. Consent Screen (Shown before exam starts)
   if (!hasConsented) {
     const isHardwareReady = isCameraActive && isMicActive && isScreenSharing;
+    const isExpired = !!assessmentMeta?.is_expired;
+    const isUpcoming = !!assessmentMeta?.is_upcoming;
+    const isBlockedBySchedule = isExpired || isUpcoming;
 
     return (
       <div className="max-w-2xl mx-auto px-4 py-12 relative">
@@ -514,6 +532,83 @@ export const ExamSession: React.FC = () => {
               <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">Configure hardware devices and review rules before starting.</p>
             </div>
           </div>
+
+          {/* Exam Info & Timing Schedule Card */}
+          <div className="mb-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-600 dark:text-brand-400">
+                  Assessment Overview
+                </span>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  {assessmentMeta?.title || 'Adaptive Exam'}
+                </h2>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                  <Clock className="w-3.5 h-3.5 text-brand-500" />
+                  <span>Duration: {Math.round((assessmentMeta?.time_limit_seconds || 3600) / 60)} min</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Exam Timing Window */}
+            <div className="pt-3 border-t border-slate-200 dark:border-white/10 text-xs">
+              {assessmentMeta?.scheduled_start_at || assessmentMeta?.scheduled_end_at ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 dark:text-slate-400">
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      <strong>Opens:</strong> {assessmentMeta.scheduled_start_at ? new Date(assessmentMeta.scheduled_start_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Open Now'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Clock className={`w-4 h-4 ${isExpired ? 'text-rose-500' : 'text-slate-400'} flex-shrink-0`} />
+                    <span className={isExpired ? 'text-rose-600 dark:text-rose-400 font-bold' : ''}>
+                      <strong>Deadline:</strong> {assessmentMeta.scheduled_end_at ? new Date(assessmentMeta.scheduled_end_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'No deadline'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2 text-slate-500 dark:text-slate-400">
+                  <Calendar className="w-4 h-4 text-brand-500 flex-shrink-0" />
+                  <span><strong>Attempt Window:</strong> Open Anytime (No schedule restriction)</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Expired Window Block Banner */}
+          {isExpired && (
+            <div className="mb-6 p-4 rounded-2xl bg-rose-500/15 border-2 border-rose-500/40 text-rose-900 dark:text-rose-200 text-xs flex items-start space-x-3 shadow-md animate-fadeIn">
+              <Lock className="w-5 h-5 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-extrabold text-sm text-rose-700 dark:text-rose-300">
+                  Exam Attempt Window Closed (Deadline Exceeded)
+                </h4>
+                <p className="mt-1 leading-relaxed text-rose-800 dark:text-rose-200">
+                  The scheduled window to attempt this exam closed on <strong>{assessmentMeta?.scheduled_end_at ? new Date(assessmentMeta.scheduled_end_at).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' }) : 'earlier'}</strong>.
+                  Because the deadline has passed, you are <strong>not able to attempt this exam</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming Window Block Banner */}
+          {isUpcoming && (
+            <div className="mb-6 p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500/40 text-amber-900 dark:text-amber-200 text-xs flex items-start space-x-3 shadow-md animate-fadeIn">
+              <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-extrabold text-sm text-amber-700 dark:text-amber-300">
+                  Exam Not Open Yet
+                </h4>
+                <p className="mt-1 leading-relaxed text-amber-800 dark:text-amber-200">
+                  This assessment is scheduled to open on <strong>{assessmentMeta?.scheduled_start_at ? new Date(assessmentMeta.scheduled_start_at).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' }) : 'a future date'}</strong>.
+                  You cannot attempt this exam until the scheduled start time.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* System & Hardware Readiness Check */}
           <div className="mb-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 space-y-4">
@@ -651,12 +746,13 @@ export const ExamSession: React.FC = () => {
           </div>
 
           <div className="mb-6 p-4 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
-            <label className="flex items-start space-x-3 cursor-pointer select-none">
+            <label className={`flex items-start space-x-3 select-none ${isBlockedBySchedule ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
               <input
                 type="checkbox"
                 checked={consentChecked}
+                disabled={isBlockedBySchedule}
                 onChange={(e) => setConsentChecked(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-brand-600 focus:ring-brand-500"
+                className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-brand-600 focus:ring-brand-500 disabled:opacity-50"
               />
               <span className="text-xs text-slate-800 dark:text-slate-300 font-medium">
                 I acknowledge the smart proctoring guidelines and agree to keep my Face Cam, Mic, and Screen Share active throughout the assessment.
@@ -673,17 +769,21 @@ export const ExamSession: React.FC = () => {
 
           <button
             onClick={handleJoinAttempt}
-            disabled={!consentChecked || !isHardwareReady || submitting}
+            disabled={!consentChecked || !isHardwareReady || submitting || isBlockedBySchedule}
             className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-brand-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
           >
             <span>
-              {submitting
+              {isExpired
+                ? 'Exam Window Closed (Deadline Exceeded)'
+                : isUpcoming
+                ? 'Exam Not Open Yet'
+                : submitting
                 ? 'Initiating Exam Session...'
                 : !isHardwareReady
                 ? 'Please Enable Camera, Mic & Screen Share Above'
                 : 'Enter Assessment Session'}
             </span>
-            <ArrowRight className="w-4 h-4" />
+            {!isBlockedBySchedule && <ArrowRight className="w-4 h-4" />}
           </button>
         </div>
       </div>

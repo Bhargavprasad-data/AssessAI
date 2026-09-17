@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
-import { Clock, HelpCircle, ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Clock, HelpCircle, ArrowRight, CheckCircle2, ShieldAlert, Calendar, Lock } from 'lucide-react';
 import { AssessmentCardSkeleton, PageHeaderSkeleton } from '../components/common/Skeleton';
 
 interface AvailableAssessment {
@@ -15,6 +15,11 @@ interface AvailableAssessment {
   ban_reason?: string;
   existing_attempt_status?: string;
   existing_attempt_id?: string;
+  scheduled_start_at?: string;
+  scheduled_end_at?: string;
+  is_upcoming?: boolean;
+  is_expired?: boolean;
+  can_attempt?: boolean;
 }
 
 export const StudentDashboard: React.FC = () => {
@@ -106,6 +111,14 @@ export const StudentDashboard: React.FC = () => {
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
                       <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> COMPLETED
                     </span>
+                  ) : a.is_expired ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                      <Lock className="w-3.5 h-3.5 mr-1" /> CLOSED
+                    </span>
+                  ) : a.is_upcoming ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                      <Clock className="w-3.5 h-3.5 mr-1" /> UPCOMING
+                    </span>
                   ) : a.existing_attempt_status === 'in_progress' ||
                     a.existing_attempt_status === 'disconnected' ||
                     a.existing_attempt_status === 'terminated' ? (
@@ -134,6 +147,18 @@ export const StudentDashboard: React.FC = () => {
                       <span>Per-Question Limit: {a.per_question_time_limit_seconds}s</span>
                     </div>
                   )}
+                  {a.scheduled_start_at && (
+                    <div className="flex items-center space-x-2 text-indigo-600 dark:text-indigo-400 font-medium">
+                      <Calendar className="w-4 h-4 flex-shrink-0" />
+                      <span>Opens: {new Date(a.scheduled_start_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
+                    </div>
+                  )}
+                  {a.scheduled_end_at && (
+                    <div className={`flex items-center space-x-2 font-medium ${a.is_expired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                      <Clock className="w-4 h-4 flex-shrink-0" />
+                      <span>Deadline: {new Date(a.scheduled_end_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
+                    </div>
+                  )}
                 </div>
 
                 {a.is_banned && a.ban_reason && (
@@ -145,9 +170,9 @@ export const StudentDashboard: React.FC = () => {
 
               <button
                 onClick={() => handleAction(a)}
-                disabled={a.is_banned}
+                disabled={a.is_banned || a.is_upcoming || (a.is_expired && a.existing_attempt_status !== 'submitted')}
                 className={`w-full py-2.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 transition-all ${
-                  a.is_banned
+                  a.is_banned || a.is_upcoming || (a.is_expired && a.existing_attempt_status !== 'submitted')
                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-200 dark:border-slate-700'
                     : a.existing_attempt_status === 'submitted'
                     ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10'
@@ -159,13 +184,19 @@ export const StudentDashboard: React.FC = () => {
                     ? 'Access Blocked'
                     : a.existing_attempt_status === 'submitted'
                     ? 'View Results'
+                    : a.is_expired
+                    ? 'Exam Window Closed'
+                    : a.is_upcoming
+                    ? 'Opens Soon'
                     : a.existing_attempt_status === 'in_progress' ||
                       a.existing_attempt_status === 'disconnected' ||
                       a.existing_attempt_status === 'terminated'
                     ? 'Resume Assessment'
                     : 'Start Assessment'}
                 </span>
-                {!a.is_banned && <ArrowRight className="w-4 h-4" />}
+                {!a.is_banned && !a.is_upcoming && (!a.is_expired || a.existing_attempt_status === 'submitted') && (
+                  <ArrowRight className="w-4 h-4" />
+                )}
               </button>
             </div>
           ))}

@@ -104,6 +104,23 @@ async def list_available_assessments(
             # Student is unbanned/eligible to resume
             existing_status = "in_progress"
 
+        now_check = datetime.now(timezone.utc)
+        is_upcoming = False
+        is_expired = False
+        if a.scheduled_start_at:
+            st = a.scheduled_start_at
+            if st.tzinfo is None:
+                st = st.replace(tzinfo=timezone.utc)
+            if now_check < st:
+                is_upcoming = True
+
+        if a.scheduled_end_at:
+            et = a.scheduled_end_at
+            if et.tzinfo is None:
+                et = et.replace(tzinfo=timezone.utc)
+            if now_check > et:
+                is_expired = True
+
         results.append({
             "id": str(a.id),
             "title": a.title,
@@ -113,7 +130,12 @@ async def list_available_assessments(
             "is_banned": ban is not None,
             "ban_reason": ban.reason if ban else None,
             "existing_attempt_status": existing_status,
-            "existing_attempt_id": existing_id
+            "existing_attempt_id": existing_id,
+            "scheduled_start_at": a.scheduled_start_at.isoformat() if a.scheduled_start_at else None,
+            "scheduled_end_at": a.scheduled_end_at.isoformat() if a.scheduled_end_at else None,
+            "is_upcoming": is_upcoming,
+            "is_expired": is_expired,
+            "can_attempt": not is_upcoming and not is_expired and not ban
         })
     return results
 
@@ -165,6 +187,29 @@ async def join_assessment(
         )
 
     now = datetime.now(timezone.utc)
+
+    # Schedule Window Verification: Students can only attempt within the scheduled window
+    if assessment.scheduled_start_at:
+        st = assessment.scheduled_start_at
+        if st.tzinfo is None:
+            st = st.replace(tzinfo=timezone.utc)
+        if now < st:
+            formatted_st = st.strftime("%b %d, %Y %I:%M %p UTC")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This exam has not started yet. It will open on {formatted_st}."
+            )
+
+    if assessment.scheduled_end_at:
+        et = assessment.scheduled_end_at
+        if et.tzinfo is None:
+            et = et.replace(tzinfo=timezone.utc)
+        if now > et:
+            formatted_et = et.strftime("%b %d, %Y %I:%M %p UTC")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This exam window has closed. The deadline was {formatted_et}."
+            )
 
     # Reconnect / Resume check
     existing_attempt = await db.scalar(

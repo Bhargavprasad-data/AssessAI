@@ -18,6 +18,8 @@ class AssessmentCreate(BaseModel):
     promotion_rules: Dict[str, Any] = Field(default_factory=lambda: {"promotion_threshold": 2, "demotion_threshold": 2})
     ban_on_violation_breach: bool = True
     device_switch_as_violation: bool = False
+    scheduled_start_at: Optional[datetime] = None
+    scheduled_end_at: Optional[datetime] = None
     question_ids: Optional[List[uuid.UUID]] = None
 
 
@@ -35,6 +37,8 @@ class AssessmentUpdate(BaseModel):
     promotion_rules: Optional[Dict[str, Any]] = None
     ban_on_violation_breach: Optional[bool] = None
     device_switch_as_violation: Optional[bool] = None
+    scheduled_start_at: Optional[datetime] = None
+    scheduled_end_at: Optional[datetime] = None
     question_ids: Optional[List[uuid.UUID]] = None
 
 
@@ -63,6 +67,8 @@ class AssessmentOut(BaseModel):
     status: str
     created_at: datetime
     config_locked: bool
+    scheduled_start_at: Optional[datetime] = None
+    scheduled_end_at: Optional[datetime] = None
     question_count: Optional[int] = 0
     attempts_count: Optional[int] = 0
     active_attempts_count: Optional[int] = 0

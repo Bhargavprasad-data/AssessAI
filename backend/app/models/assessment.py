@@ -29,6 +29,8 @@ class Assessment(Base):
     status = Column(String(32), nullable=False, default="draft")  # 'draft', 'published', 'closed'
     created_at = Column(TZDateTime(), default=lambda: datetime.now(timezone.utc), nullable=False)
     config_locked = Column(Boolean, nullable=False, default=False)
+    scheduled_start_at = Column(TZDateTime(), nullable=True)  # When the exam opens
+    scheduled_end_at = Column(TZDateTime(), nullable=True)    # When the exam window closes / deadline
 
     __table_args__ = (
         CheckConstraint("time_limit_seconds >= 1", name="ck_assessment_time_limit"),

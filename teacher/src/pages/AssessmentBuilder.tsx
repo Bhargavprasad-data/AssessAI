@@ -7,7 +7,7 @@ import { Modal } from '../components/common/Modal';
 import { cleanQuestionText } from '../utils/textCleaner';
 import {
   UploadCloud, AlertTriangle, Trash2, ArrowRight, CheckCircle2, Loader2,
-  FileText, Plus, X, CheckSquare, Square, FolderOpen, Edit3, Check
+  FileText, Plus, X, CheckSquare, Square, FolderOpen, Edit3, Check, Calendar, Clock
 } from 'lucide-react';
 
 interface UploadedMaterialItem {
@@ -63,6 +63,8 @@ export const AssessmentBuilder: React.FC = () => {
   const [maxViolations, setMaxViolations] = useState<number | ''>(3);
   const [banOnBreach, setBanOnBreach] = useState(true);
   const [deviceSwitchAsViolation, setDeviceSwitchAsViolation] = useState(false);
+  const [scheduledStart, setScheduledStart] = useState<string>('');
+  const [scheduledEnd, setScheduledEnd] = useState<string>('');
 
   // Sufficiency Warning Modal State
   const [sufficiencyWarning, setSufficiencyWarning] = useState<{
@@ -146,6 +148,20 @@ export const AssessmentBuilder: React.FC = () => {
           setBanOnBreach(a.ban_on_violation_breach ?? true);
           setDeviceSwitchAsViolation(a.device_switch_as_violation ?? false);
           setEditingStatus(a.status || 'published');
+          if (a.scheduled_start_at) {
+            try {
+              const d = new Date(a.scheduled_start_at);
+              const offset = d.getTimezoneOffset() * 60000;
+              setScheduledStart(new Date(d.getTime() - offset).toISOString().slice(0, 16));
+            } catch {}
+          }
+          if (a.scheduled_end_at) {
+            try {
+              const d = new Date(a.scheduled_end_at);
+              const offset = d.getTimezoneOffset() * 60000;
+              setScheduledEnd(new Date(d.getTime() - offset).toISOString().slice(0, 16));
+            } catch {}
+          }
         }
 
         // Fetch questions assigned to this assessment
@@ -523,6 +539,8 @@ export const AssessmentBuilder: React.FC = () => {
       promotion_rules: { promotion_threshold: finalPromTh, demotion_threshold: finalDemTh },
       ban_on_violation_breach: banOnBreach,
       device_switch_as_violation: deviceSwitchAsViolation,
+      scheduled_start_at: scheduledStart ? new Date(scheduledStart).toISOString() : null,
+      scheduled_end_at: scheduledEnd ? new Date(scheduledEnd).toISOString() : null,
       question_ids: Array.from(selectedQuestionIds),
     };
 
@@ -634,7 +652,7 @@ export const AssessmentBuilder: React.FC = () => {
               activeTab === 'config' ? 'bg-brand-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            3. Settings &amp; {assessmentId ? 'Save' : 'Publish'}
+            3. Exam Timing &amp; {assessmentId ? 'Save' : 'Publish'}
           </button>
         </div>
       </div>
@@ -1225,7 +1243,117 @@ export const AssessmentBuilder: React.FC = () => {
       {/* Tab 3: Settings & Publish */}
       {activeTab === 'config' && (
         <div className="glass-panel rounded-3xl p-8 border border-slate-200 dark:border-white/10 space-y-6">
-          <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Assessment Configuration</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Assessment Configuration</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Configure exam schedule timing, test duration, and proctoring rules.</p>
+            </div>
+          </div>
+
+          {/* PROMINENT EXAM TIMING & SCHEDULE WINDOW */}
+          <div className="p-6 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-brand-500/10 to-purple-500/10 border-2 border-brand-500/30 dark:border-brand-400/30 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-xl bg-brand-500 text-white shadow-md shadow-brand-500/30">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
+                    <span>Exam Timing &amp; Allowed Attempt Window</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-brand-500/20 text-brand-700 dark:text-brand-300 border border-brand-500/30">
+                      Enforced Window
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    Students are only allowed to attempt the exam during this scheduled window. <strong>If the current time exceeds the deadline, the exam will be locked and cannot be attempted.</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    const d = String(now.getDate()).padStart(2, '0');
+                    setScheduledStart(`${y}-${m}-${d}T18:00`);
+                    setScheduledEnd(`${y}-${m}-${d}T21:00`);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/15 hover:border-brand-500 text-slate-700 dark:text-slate-200 transition-colors shadow-xs cursor-pointer"
+                >
+                  Today 6 PM – 9 PM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const startStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                    const end = new Date(now.getTime() + 3 * 3600 * 1000);
+                    const endStr = new Date(end.getTime() - end.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                    setScheduledStart(startStr);
+                    setScheduledEnd(endStr);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/15 hover:border-brand-500 text-slate-700 dark:text-slate-200 transition-colors shadow-xs cursor-pointer"
+                >
+                  Next 3 Hours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScheduledStart('');
+                    setScheduledEnd('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/15 hover:border-rose-500 text-rose-600 dark:text-rose-400 transition-colors shadow-xs cursor-pointer"
+                >
+                  Clear (Anytime Access)
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xs">
+                <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5 flex items-center space-x-1.5">
+                  <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Available From (Exam Opens At)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={scheduledStart}
+                  onChange={(e) => setScheduledStart(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white text-sm font-semibold focus:ring-2 focus:ring-brand-500/20"
+                />
+                <span className="block mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  Students cannot start or attempt the exam before this date and time.
+                </span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xs">
+                <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5 flex items-center space-x-1.5">
+                  <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                  <span>Available Until / Deadline (Exam Closes At)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={scheduledEnd}
+                  onChange={(e) => setScheduledEnd(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white text-sm font-semibold focus:ring-2 focus:ring-brand-500/20"
+                />
+                <span className="block mt-1.5 text-[11px] text-rose-600 dark:text-rose-400 font-bold">
+                  ⚠️ Once this time exceeds, students will NOT be able to attempt the exam.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 text-[11px] text-slate-600 dark:text-slate-400 bg-white/70 dark:bg-slate-900/70 p-2.5 rounded-xl border border-slate-200/60 dark:border-white/5">
+              <CheckCircle2 className="w-4 h-4 text-brand-500 flex-shrink-0" />
+              <span>
+                <strong>How it works:</strong> Students can only enter between Start Time and End Time. Once started, they have the <strong>Exam Time Limit ({timeLimitMinutes || 60} mins)</strong> below to finish.
+              </span>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -1434,6 +1562,8 @@ export const AssessmentBuilder: React.FC = () => {
               </span>
             </label>
           </div>
+
+
 
           {/* Action Buttons */}
           <div className="flex items-center justify-end space-x-4 pt-6 border-t border-slate-200 dark:border-white/10">
