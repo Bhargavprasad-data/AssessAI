@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api/client';
 import type { Question } from '../types';
@@ -113,19 +113,230 @@ export const AssessmentBuilder: React.FC = () => {
 
   const [editingStatus, setEditingStatus] = useState<string | null>(null);
   const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const isDraftLoadedRef = useRef(false);
+  const DRAFT_STORAGE_KEY = 'assessai_assessment_builder_draft';
 
-  // Load existing materials from library on mount
+  // Load questions for all selected materials (merges unique questions into pool)
+  const loadQuestionsForSelectedMaterials = useCallback(async (targetJobId?: string | null, targetMatIds?: string[]) => {
+    try {
+      const matIds = targetMatIds && targetMatIds.length > 0 ? targetMatIds : Array.from(selectedMaterialIds);
+      if (matIds.length === 0) return;
+
+      const payload: any = { material_ids: matIds, include_retired: false };
+      const effectiveJobId = targetJobId || jobId;
+      if (effectiveJobId) {
+        payload.job_id = effectiveJobId;
+      }
+
+      const qList = await apiFetch<Question[]>('/api/teacher/materials/questions-batch', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (qList && qList.length > 0) {
+        setQuestions(prev => {
+          if (prev.length === 0) return qList;
+          const existingIds = new Set(prev.map(q => q.id));
+          const toAdd = qList.filter(q => !existingIds.has(q.id));
+          return [...prev, ...toAdd];
+        });
+        setSelectedQuestionIds(prev => {
+          const next = new Set(prev);
+          qList.forEach((q: Question) => next.add(q.id));
+          return next;
+        });
+      }
+    } catch (err: any) {
+      console.warn('Could not load questions for materials:', err);
+    }
+  }, [selectedMaterialIds, jobId]);
+
+  // 1. Restore draft on mount when creating a new assessment
+  useEffect(() => {
+    if (assessmentId) return;
+
+    try {
+      const savedRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (savedRaw) {
+        const saved = JSON.parse(savedRaw);
+        if (saved && typeof saved === 'object') {
+          if (saved.title) setTitle(saved.title);
+          if (saved.timeLimitMinutes !== undefined && saved.timeLimitMinutes !== '') setTimeLimitMinutes(saved.timeLimitMinutes);
+          if (saved.perQuestionLimit !== undefined) setPerQuestionLimit(saved.perQuestionLimit);
+          if (saved.fastThreshold !== undefined && saved.fastThreshold !== '') setFastThreshold(saved.fastThreshold);
+          if (saved.enableSpeedAdaptive !== undefined) setEnableSpeedAdaptive(saved.enableSpeedAdaptive);
+          if (saved.maxQuestionCount !== undefined && saved.maxQuestionCount !== '') setMaxQuestionCount(saved.maxQuestionCount);
+          if (saved.promotionThreshold !== undefined && saved.promotionThreshold !== '') setPromotionThreshold(saved.promotionThreshold);
+          if (saved.demotionThreshold !== undefined && saved.demotionThreshold !== '') setDemotionThreshold(saved.demotionThreshold);
+          if (saved.maxViolations !== undefined && saved.maxViolations !== '') setMaxViolations(saved.maxViolations);
+          if (saved.banOnBreach !== undefined) setBanOnBreach(saved.banOnBreach);
+          if (saved.deviceSwitchAsViolation !== undefined) setDeviceSwitchAsViolation(saved.deviceSwitchAsViolation);
+          if (saved.scheduledStart) setScheduledStart(saved.scheduledStart);
+          if (saved.scheduledEnd) setScheduledEnd(saved.scheduledEnd);
+
+          if (saved.materials && Array.isArray(saved.materials) && saved.materials.length > 0) {
+            setMaterials(saved.materials);
+          }
+          if (saved.selectedMaterialIds && Array.isArray(saved.selectedMaterialIds) && saved.selectedMaterialIds.length > 0) {
+            setSelectedMaterialIds(new Set(saved.selectedMaterialIds));
+          }
+
+          if (saved.questions && Array.isArray(saved.questions) && saved.questions.length > 0) {
+            setQuestions(saved.questions);
+            if (saved.selectedQuestionIds && Array.isArray(saved.selectedQuestionIds)) {
+              setSelectedQuestionIds(new Set(saved.selectedQuestionIds));
+            } else {
+              setSelectedQuestionIds(new Set(saved.questions.map((q: any) => q.id)));
+            }
+            setHasRestoredDraft(true);
+          }
+
+          if (saved.activeTab) {
+            setActiveTab(saved.activeTab);
+          } else if (saved.questions && saved.questions.length > 0) {
+            setActiveTab('questions');
+          }
+
+          if (saved.jobId) {
+            setJobId(saved.jobId);
+            setJobStatus(saved.jobStatus || 'queued');
+          }
+
+          // Background sync questions from backend if materials were selected
+          if (saved.selectedMaterialIds && saved.selectedMaterialIds.length > 0) {
+            loadQuestionsForSelectedMaterials(saved.jobId || null, saved.selectedMaterialIds);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to restore draft from localStorage:', err);
+    } finally {
+      isDraftLoadedRef.current = true;
+    }
+  }, [assessmentId, loadQuestionsForSelectedMaterials]);
+
+  // 2. Auto-save draft to localStorage whenever builder state changes
+  useEffect(() => {
+    if (assessmentId) return;
+    if (!isDraftLoadedRef.current) return;
+
+    // Skip saving empty default state
+    if (materials.length === 0 && questions.length === 0 && !jobId && (!title || title === 'New Adaptive Assessment')) {
+      return;
+    }
+
+    const draft = {
+      activeTab,
+      materials,
+      selectedMaterialIds: Array.from(selectedMaterialIds),
+      questions,
+      selectedQuestionIds: Array.from(selectedQuestionIds),
+      jobId,
+      jobStatus,
+      title,
+      timeLimitMinutes,
+      perQuestionLimit,
+      fastThreshold,
+      enableSpeedAdaptive,
+      maxQuestionCount,
+      promotionThreshold,
+      demotionThreshold,
+      maxViolations,
+      banOnBreach,
+      deviceSwitchAsViolation,
+      scheduledStart,
+      scheduledEnd,
+      updatedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch (e) {
+      console.warn('Failed to save assessment builder draft:', e);
+    }
+  }, [
+    assessmentId,
+    activeTab,
+    materials,
+    selectedMaterialIds,
+    questions,
+    selectedQuestionIds,
+    jobId,
+    jobStatus,
+    title,
+    timeLimitMinutes,
+    perQuestionLimit,
+    fastThreshold,
+    enableSpeedAdaptive,
+    maxQuestionCount,
+    promotionThreshold,
+    demotionThreshold,
+    maxViolations,
+    banOnBreach,
+    deviceSwitchAsViolation,
+    scheduledStart,
+    scheduledEnd,
+  ]);
+
+  // Discard draft and start fresh
+  const handleDiscardDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {}
+    setMaterials([]);
+    setSelectedMaterialIds(new Set());
+    setQuestions([]);
+    setSelectedQuestionIds(new Set());
+    setJobId(null);
+    setJobStatus(null);
+    setTitle('New Adaptive Assessment');
+    setTimeLimitMinutes(60);
+    setScheduledStart('');
+    setScheduledEnd('');
+    setActiveTab('material');
+    setHasRestoredDraft(false);
+    showToast('success', 'Draft discarded. Starting fresh assessment.');
+  };
+
+  // Load existing materials from library on mount + auto-recover if empty
   useEffect(() => {
     const loadLibrary = async () => {
       try {
         const list = await apiFetch<UploadedMaterialItem[]>('/api/teacher/materials');
-        setLibraryMaterials(deduplicateMaterials(list));
+        const dedupedList = deduplicateMaterials(list);
+        setLibraryMaterials(dedupedList);
+
+        // Intelligent Recovery: If creating a new assessment, and no questions/materials are loaded in draft
+        if (!assessmentId) {
+          const savedDraftRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (!savedDraftRaw && dedupedList.length > 0) {
+            // Check if the most recent material in library has questions in the database
+            const recentMat = dedupedList[0];
+            try {
+              const qBatch = await apiFetch<Question[]>('/api/teacher/materials/questions-batch', {
+                method: 'POST',
+                body: JSON.stringify({ material_ids: [recentMat.id], include_retired: false }),
+              });
+              if (qBatch && qBatch.length > 0) {
+                setMaterials([recentMat]);
+                setSelectedMaterialIds(new Set([recentMat.id]));
+                setQuestions(qBatch);
+                setSelectedQuestionIds(new Set(qBatch.map(q => q.id)));
+                setActiveTab('questions');
+                setHasRestoredDraft(true);
+                showToast('success', `Restored ${qBatch.length} questions from "${recentMat.filename}".`);
+              }
+            } catch (batchErr) {
+              console.warn('Could not auto-recover recent questions:', batchErr);
+            }
+          }
+        }
       } catch (err) {
         // Silently handle
       }
     };
     loadLibrary();
-  }, []);
+  }, [assessmentId]);
 
   // Load existing assessment & its assigned questions when editing
   useEffect(() => {
@@ -229,31 +440,7 @@ export const AssessmentBuilder: React.FC = () => {
       isSubscribed = false;
       clearInterval(interval);
     };
-  }, [jobId, jobStatus, selectedMaterialIds]);
-
-  // Load questions for all selected materials
-  const loadQuestionsForSelectedMaterials = async (targetJobId?: string | null) => {
-    try {
-      const matIds = Array.from(selectedMaterialIds);
-      if (matIds.length === 0) return;
-
-      const payload: any = { material_ids: matIds, include_retired: false };
-      const effectiveJobId = targetJobId || jobId;
-      if (effectiveJobId) {
-        payload.job_id = effectiveJobId;
-      }
-
-      const qList = await apiFetch<Question[]>('/api/teacher/materials/questions-batch', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setQuestions(qList);
-      // Select all by default
-      setSelectedQuestionIds(new Set(qList.map((q: Question) => q.id)));
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
+  }, [jobId, jobStatus, loadQuestionsForSelectedMaterials]);
 
   // Multiple PDF Upload Handler
   const uploadFiles = async (filesToUpload: FileList | File[]) => {
@@ -357,6 +544,8 @@ export const AssessmentBuilder: React.FC = () => {
       return deduplicateMaterials([...prev, mat]);
     });
     setSelectedMaterialIds(prev => new Set(prev).add(mat.id));
+    // Immediately fetch any existing questions for this material into the question pool
+    loadQuestionsForSelectedMaterials(null, [mat.id]);
   };
 
   // Delete material permanently from library & database
@@ -560,6 +749,9 @@ export const AssessmentBuilder: React.FC = () => {
       }
 
       if (publishNow && currentId) {
+        try {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch {}
         if (editingStatus === 'published') {
           showToast('success', 'Assessment updated and saved successfully!');
           setTimeout(() => navigate(`/teacher/assessments/${currentId}/analytics`), 1200);
@@ -588,6 +780,9 @@ export const AssessmentBuilder: React.FC = () => {
           }
         }
       } else {
+        try {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch {}
         showToast('success', assessmentId ? 'Assessment changes saved successfully!' : 'Draft saved successfully!');
         setTimeout(() => navigate('/teacher/dashboard'), 1200);
       }
@@ -639,7 +834,12 @@ export const AssessmentBuilder: React.FC = () => {
             1. Materials ({selectedMaterialIds.size} Selected)
           </button>
           <button
-            onClick={() => setActiveTab('questions')}
+            onClick={() => {
+              setActiveTab('questions');
+              if (questions.length === 0 && selectedMaterialIds.size > 0) {
+                loadQuestionsForSelectedMaterials();
+              }
+            }}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
               activeTab === 'questions' ? 'bg-brand-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
@@ -656,6 +856,25 @@ export const AssessmentBuilder: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Draft Restored Banner */}
+      {hasRestoredDraft && !assessmentId && (
+        <div className="mb-6 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center space-x-2.5 text-indigo-700 dark:text-indigo-300">
+            <CheckCircle2 className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+            <span>
+              <strong>Draft Session Preserved:</strong> We automatically saved and restored your generated questions ({questions.length}) and configured settings across page refreshes.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            className="self-end sm:self-auto px-3 py-1.5 rounded-xl text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-500/20 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            Discard Draft &amp; Start Fresh
+          </button>
+        </div>
+      )}
 
       {/* Tab 1: Multi-Material & AI Generation */}
       {activeTab === 'material' && (

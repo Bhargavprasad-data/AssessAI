@@ -404,53 +404,17 @@ async def list_course_materials(
     )
     materials = (await db.scalars(stmt)).all()
 
-    seen_filenames = set()
+    seen_ids = set()
     deduped = []
-    orphan_ids = []
 
     for m in materials:
-        # Check if the file physically exists in storage
-        file_exists = False
-        if m.storage_path:
-            if os.path.exists(m.storage_path):
-                file_exists = True
-            else:
-                upload_rel = os.path.join(settings.UPLOAD_DIR, os.path.basename(m.storage_path))
-                if os.path.exists(upload_rel):
-                    file_exists = True
-                    m.storage_path = upload_rel
-
-        if not file_exists:
-            orphan_ids.append(m.id)
-            continue
-
-        fn_key = m.filename.strip().lower()
-        if fn_key not in seen_filenames:
-            seen_filenames.add(fn_key)
+        if m.id not in seen_ids:
+            seen_ids.add(m.id)
             deduped.append({
                 "id": str(m.id),
                 "filename": m.filename,
                 "uploaded_at": m.uploaded_at.isoformat()
             })
-        else:
-            orphan_ids.append(m.id)
-
-    # Automatically purge deleted/orphan file records from database so page refresh is always clean
-    if orphan_ids:
-        try:
-            q_stmt = select(Question.id).where(Question.material_id.in_(orphan_ids))
-            q_ids = (await db.scalars(q_stmt)).all()
-            if q_ids:
-                await db.execute(delete(AttemptQuestionServing).where(AttemptQuestionServing.question_id.in_(q_ids)))
-                await db.execute(delete(AttemptAnswer).where(AttemptAnswer.question_id.in_(q_ids)))
-                await db.execute(update(Attempt).where(Attempt.current_question_id.in_(q_ids)).values(current_question_id=None))
-                await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(q_ids)))
-                await db.execute(delete(Question).where(Question.id.in_(q_ids)))
-            await db.execute(delete(AIGenerationJob).where(AIGenerationJob.material_id.in_(orphan_ids)))
-            await db.execute(delete(CourseMaterial).where(CourseMaterial.id.in_(orphan_ids)))
-            await db.commit()
-        except Exception:
-            await db.rollback()
 
     return deduped
 
