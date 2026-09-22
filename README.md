@@ -1,4 +1,4 @@
-# 🧠 AssessAI — AI-Powered Adaptive Online Assessment & Smart Proctoring System
+# 🧠 AssessAI — AI-Powered Adaptive Online Assessment & Smart Proctoring System.
 
 <div align="center">
 
