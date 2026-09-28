@@ -322,7 +322,7 @@ The database seeder (`seed_demo.py`) initializes the following test accounts:
 
 | Role | Email | Password | Description |
 | :--- | :--- | :--- | :--- |
-| **Administrator** | `bhavv` | `Bha` | Platform Admin (Full control, Audit Logs, Global Bans) |
+| **Administrator** | `bhavv@0984ydyt` | `Bhaargavvabndhg` | Platform Admin (Full control, Audit Logs, Global Bans) |
 | **Teacher** | `ter@proctor.ai` | `Teuuuund chdsscrPass!` | Instructor (Assessment Builder, AI MCQ Generator, Analytics) |
 | **Student 1** | `sde1@proctor.ai` | `StuPass3!` | Completed attempt (Score: 16.0, Hard reached) |
 | **Student 2** | `sden\t2@prtor.ai` | `SttPsuddds1!` | Ready to take the assessment |
