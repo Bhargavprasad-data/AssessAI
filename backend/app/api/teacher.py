@@ -458,12 +458,14 @@ async def list_course_materials(
     )
     materials = (await db.scalars(stmt)).all()
 
-    seen_ids = set()
+    seen_keys = set()
     deduped = []
 
     for m in materials:
-        if m.id not in seen_ids:
-            seen_ids.add(m.id)
+        key = m.filename.strip().lower() if m.filename else str(m.id)
+        if key not in seen_keys and m.id not in seen_keys:
+            seen_keys.add(key)
+            seen_keys.add(m.id)
             topics = []
             if m.detected_topics:
                 try:
@@ -565,26 +567,35 @@ async def delete_all_course_materials(
 @router.delete("/materials/{material_id}")
 async def delete_course_material(
     material_id: uuid.UUID,
+    filename: Optional[str] = None,
     current_teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
     material = await db.get(CourseMaterial, material_id)
-    if not material:
+    target_filename = None
+    if filename and filename.strip():
+        target_filename = filename.strip()
+    elif material and material.filename:
+        target_filename = material.filename.strip()
+
+    # Find ALL material records for this teacher matching the ID OR filename (case-insensitive)
+    conditions = [CourseMaterial.id == material_id]
+    if target_filename:
+        conditions.append(func.lower(CourseMaterial.filename) == target_filename.lower())
+
+    stmt = select(CourseMaterial).where(
+        CourseMaterial.teacher_id == current_teacher.id,
+        or_(*conditions)
+    )
+    all_matching_mats = list((await db.scalars(stmt)).all())
+
+    # Fallback: if material was found by ID, ensure it is included
+    if material and material not in all_matching_mats:
+        all_matching_mats.append(material)
+
+    if not all_matching_mats:
         # Idempotent delete: if already removed from database, return success
         return {"message": "Course material already deleted or not found", "id": str(material_id)}
-
-    # Find ALL material records for this teacher matching the filename (case-insensitive) OR this ID
-    all_matching_mats = (await db.scalars(
-        select(CourseMaterial).where(
-            CourseMaterial.teacher_id == current_teacher.id,
-            or_(
-                CourseMaterial.id == material_id,
-                func.lower(CourseMaterial.filename) == material.filename.strip().lower()
-            )
-        )
-    )).all()
-    if not all_matching_mats:
-        all_matching_mats = [material]
 
     mat_ids = [m.id for m in all_matching_mats]
 

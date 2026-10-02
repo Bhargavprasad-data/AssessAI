@@ -236,8 +236,11 @@ export const AssessmentBuilder: React.FC = () => {
     if (assessmentId) return;
     if (!isDraftLoadedRef.current) return;
 
-    // Skip saving empty default state
+    // Clear saved draft if user has deleted/cleared all materials and questions
     if (materials.length === 0 && questions.length === 0 && !jobId && (!title || title === 'New Adaptive Assessment')) {
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {}
       return;
     }
 
@@ -323,6 +326,45 @@ export const AssessmentBuilder: React.FC = () => {
         if (!isMounted) return;
         const dedupedList = deduplicateMaterials(list);
         setLibraryMaterials(dedupedList);
+
+        // Reconcile with active materials: prune any materials that were deleted on the server
+        const validServerIds = new Set(dedupedList.map(m => m.id));
+        const validServerFilenames = new Set(dedupedList.map(m => m.filename.toLowerCase().trim()));
+
+        setMaterials(prev => {
+          const valid = prev.filter(m =>
+            validServerIds.has(m.id) || validServerFilenames.has(m.filename.toLowerCase().trim())
+          );
+          return valid;
+        });
+
+        setSelectedMaterialIds(prev => {
+          const next = new Set<string>();
+          prev.forEach(id => {
+            if (validServerIds.has(id)) next.add(id);
+          });
+          return next;
+        });
+
+        // Also clean up draft in localStorage so deleted materials never reappear
+        try {
+          const savedRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (savedRaw) {
+            const saved = JSON.parse(savedRaw);
+            if (saved && typeof saved === 'object') {
+              const cleanedMats = (saved.materials || []).filter((m: any) =>
+                validServerIds.has(m.id) || validServerFilenames.has(m.filename?.toLowerCase()?.trim())
+              );
+              saved.materials = cleanedMats;
+              saved.selectedMaterialIds = (saved.selectedMaterialIds || []).filter((id: string) => validServerIds.has(id));
+              if (cleanedMats.length === 0 && (!saved.questions || saved.questions.length === 0) && !saved.jobId) {
+                localStorage.removeItem(DRAFT_STORAGE_KEY);
+              } else {
+                localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(saved));
+              }
+            }
+          }
+        } catch {}
       } catch (err) {
         // Silently handle
       }
@@ -531,6 +573,22 @@ export const AssessmentBuilder: React.FC = () => {
     if (activeVerificationCard?.id === matId) {
       setActiveVerificationCard(null);
     }
+    // Clean up draft in localStorage
+    try {
+      const savedRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (savedRaw) {
+        const saved = JSON.parse(savedRaw);
+        if (saved && typeof saved === 'object') {
+          saved.materials = (saved.materials || []).filter((m: any) => m.id !== matId);
+          saved.selectedMaterialIds = (saved.selectedMaterialIds || []).filter((id: string) => id !== matId);
+          if (saved.materials.length === 0 && (!saved.questions || saved.questions.length === 0) && !saved.jobId) {
+            localStorage.removeItem(DRAFT_STORAGE_KEY);
+          } else {
+            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(saved));
+          }
+        }
+      }
+    } catch {}
   };
 
   // Toggle selection for a material
@@ -567,9 +625,9 @@ export const AssessmentBuilder: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      await apiFetch(`/api/teacher/materials/${matId}`, { method: 'DELETE' });
-      setLibraryMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase() !== filename.toLowerCase()));
-      setMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase() !== filename.toLowerCase()));
+      await apiFetch(`/api/teacher/materials/${matId}?filename=${encodeURIComponent(filename)}`, { method: 'DELETE' });
+      setLibraryMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase().trim() !== filename.toLowerCase().trim()));
+      setMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase().trim() !== filename.toLowerCase().trim()));
       setSelectedMaterialIds(prev => {
         const next = new Set(prev);
         next.delete(matId);
@@ -582,6 +640,29 @@ export const AssessmentBuilder: React.FC = () => {
         questions.filter(q => q.material_id === matId).forEach(q => next.delete(q.id));
         return next;
       });
+      // Synchronously purge from localStorage draft so it never re-appears on refresh
+      try {
+        const savedRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (savedRaw) {
+          const saved = JSON.parse(savedRaw);
+          if (saved && typeof saved === 'object') {
+            const nextMats = (saved.materials || []).filter(
+              (m: any) => m.id !== matId && m.filename?.toLowerCase()?.trim() !== filename.toLowerCase().trim()
+            );
+            saved.materials = nextMats;
+            saved.selectedMaterialIds = (saved.selectedMaterialIds || []).filter((id: string) => id !== matId);
+            saved.questions = (saved.questions || []).filter((q: any) => q.material_id !== matId);
+            saved.selectedQuestionIds = (saved.selectedQuestionIds || []).filter((id: string) => {
+              return !questions.some(q => q.id === id && q.material_id === matId);
+            });
+            if (nextMats.length === 0 && (!saved.questions || saved.questions.length === 0) && !saved.jobId) {
+              localStorage.removeItem(DRAFT_STORAGE_KEY);
+            } else {
+              localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(saved));
+            }
+          }
+        }
+      } catch {}
       setSuccess(`Successfully deleted "${filename}" permanently.`);
       if (activeVerificationCard?.id === matId) {
         setActiveVerificationCard(null);
@@ -591,8 +672,8 @@ export const AssessmentBuilder: React.FC = () => {
       const msg = err.message || '';
       // If already 404 or not found on server, remove from UI cleanly
       if (msg.includes('404') || msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('failed to load resource')) {
-        setLibraryMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase() !== filename.toLowerCase()));
-        setMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase() !== filename.toLowerCase()));
+        setLibraryMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase().trim() !== filename.toLowerCase().trim()));
+        setMaterials(prev => prev.filter(m => m.id !== matId && m.filename.toLowerCase().trim() !== filename.toLowerCase().trim()));
         setSelectedMaterialIds(prev => {
           const next = new Set(prev);
           next.delete(matId);
@@ -604,6 +685,24 @@ export const AssessmentBuilder: React.FC = () => {
           questions.filter(q => q.material_id === matId).forEach(q => next.delete(q.id));
           return next;
         });
+        try {
+          const savedRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (savedRaw) {
+            const saved = JSON.parse(savedRaw);
+            if (saved && typeof saved === 'object') {
+              const nextMats = (saved.materials || []).filter(
+                (m: any) => m.id !== matId && m.filename?.toLowerCase()?.trim() !== filename.toLowerCase().trim()
+              );
+              saved.materials = nextMats;
+              saved.selectedMaterialIds = (saved.selectedMaterialIds || []).filter((id: string) => id !== matId);
+              if (nextMats.length === 0 && (!saved.questions || saved.questions.length === 0) && !saved.jobId) {
+                localStorage.removeItem(DRAFT_STORAGE_KEY);
+              } else {
+                localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(saved));
+              }
+            }
+          }
+        } catch {}
         setSuccess(`Removed "${filename}" from view.`);
         if (activeVerificationCard?.id === matId) {
           setActiveVerificationCard(null);
@@ -630,6 +729,9 @@ export const AssessmentBuilder: React.FC = () => {
       setQuestions([]);
       setSelectedQuestionIds(new Set());
       setActiveVerificationCard(null);
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {}
       setSuccess('Successfully deleted all PDF documents from your library.');
       setShowClearLibraryModal(false);
     } catch (err: any) {
