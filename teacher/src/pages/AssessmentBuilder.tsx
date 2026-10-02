@@ -47,6 +47,7 @@ export const AssessmentBuilder: React.FC = () => {
 
   // Topic Verification & Classification State
   const [activeVerificationCard, setActiveVerificationCard] = useState<UploadedMaterialItem | null>(null);
+  const [pendingVerificationQueue, setPendingVerificationQueue] = useState<UploadedMaterialItem[]>([]);
   const [showTopicModal, setShowTopicModal] = useState<UploadedMaterialItem | null>(null);
   const [verifiedMaterialIds, setVerifiedMaterialIds] = useState<Set<string>>(new Set());
 
@@ -197,6 +198,7 @@ export const AssessmentBuilder: React.FC = () => {
 
           if (saved.materials && Array.isArray(saved.materials) && saved.materials.length > 0) {
             setMaterials(saved.materials);
+            setVerifiedMaterialIds(new Set(saved.materials.map((m: any) => m.id)));
           }
           if (saved.selectedMaterialIds && Array.isArray(saved.selectedMaterialIds) && saved.selectedMaterialIds.length > 0) {
             setSelectedMaterialIds(new Set(saved.selectedMaterialIds));
@@ -505,20 +507,7 @@ export const AssessmentBuilder: React.FC = () => {
 
       const newMaterials: UploadedMaterialItem[] = res.materials || (res.id ? [res] : []);
       
-      setMaterials(prev => {
-        const combined = [...prev];
-        newMaterials.forEach(nm => {
-          const idx = combined.findIndex(m => m.id === nm.id || m.filename.toLowerCase() === nm.filename.toLowerCase());
-          if (idx >= 0) {
-            combined[idx] = nm;
-          } else {
-            combined.push(nm);
-          }
-        });
-        return deduplicateMaterials(combined);
-      });
-
-      // Also update library materials list
+      // Update library materials list
       setLibraryMaterials(prev => {
         const combined = [...prev];
         newMaterials.forEach(nm => {
@@ -532,20 +521,17 @@ export const AssessmentBuilder: React.FC = () => {
         return deduplicateMaterials(combined);
       });
 
-      // Automatically select all uploaded materials
-      setSelectedMaterialIds(prev => {
-        const next = new Set(prev);
-        newMaterials.forEach(m => next.add(m.id));
-        return next;
-      });
-
+      // NOTE: Do NOT add to `materials` or `selectedMaterialIds` yet!
+      // The PDF must first be verified by the teacher clicking "Yes, Correct PDF".
+      // Only upon verification will it be added to the Exam Pool below.
       if (newMaterials.length > 0) {
         setActiveVerificationCard(newMaterials[0]);
+        setPendingVerificationQueue(newMaterials.slice(1));
         const primarySubject = newMaterials[0].detected_subject;
         if (primarySubject) {
-          setSuccess(`PDF parsed! Detected subject: "${primarySubject}". Please verify below.`);
+          setSuccess(`PDF parsed! Detected subject: "${primarySubject}". Please verify before adding to exam pool.`);
         } else {
-          setSuccess(`Successfully uploaded and parsed ${newMaterials.length} PDF document(s).`);
+          setSuccess(`Successfully uploaded ${newMaterials.length} PDF(s). Please verify content before adding to exam pool.`);
         }
       }
     } catch (err: any) {
@@ -601,6 +587,80 @@ export const AssessmentBuilder: React.FC = () => {
     });
   };
 
+  // Confirm and accept an uploaded material into the Exam Pool
+  const handleConfirmVerification = (confirmedMat: UploadedMaterialItem) => {
+    // 1. Add to materials pool (deduplicated)
+    setMaterials(prev => {
+      const combined = [...prev];
+      const idx = combined.findIndex(m => m.id === confirmedMat.id || m.filename.toLowerCase() === confirmedMat.filename.toLowerCase());
+      if (idx >= 0) {
+        combined[idx] = confirmedMat;
+      } else {
+        combined.push(confirmedMat);
+      }
+      return deduplicateMaterials(combined);
+    });
+
+    // 2. Select it for question generation
+    setSelectedMaterialIds(prev => new Set(prev).add(confirmedMat.id));
+
+    // 3. Mark as verified
+    setVerifiedMaterialIds(prev => new Set(prev).add(confirmedMat.id));
+
+    // 4. Preload any existing questions from library
+    loadQuestionsForSelectedMaterials(null, [confirmedMat.id]);
+
+    // 5. Toast & notification
+    setSuccess(`Subject "${confirmedMat.detected_subject || 'Document'}" confirmed! ${confirmedMat.filename} added to Exam Pool.`);
+
+    // 6. Advance verification queue if multiple PDFs were uploaded
+    if (pendingVerificationQueue.length > 0) {
+      const [nextMat, ...rest] = pendingVerificationQueue;
+      setPendingVerificationQueue(rest);
+      setActiveVerificationCard(nextMat);
+    } else {
+      setActiveVerificationCard(null);
+    }
+  };
+
+  // Reject / Remove an uploaded material that is wrong or rejected
+  const handleRemovePendingVerification = async (matToRemove: UploadedMaterialItem) => {
+    // 1. Delete from backend/database
+    try {
+      await apiFetch(`/api/teacher/materials/${matToRemove.id}?filename=${encodeURIComponent(matToRemove.filename)}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Failed to delete rejected material from server:', err);
+    }
+
+    // 2. Remove from library materials
+    setLibraryMaterials(prev => prev.filter(m => m.id !== matToRemove.id && m.filename.toLowerCase().trim() !== matToRemove.filename.toLowerCase().trim()));
+
+    // 3. Remove from builder materials and selections if it was present
+    removeMaterial(matToRemove.id);
+
+    showToast('error', `Removed "${matToRemove.filename}". You can now upload or select the correct PDF.`);
+
+    // 4. Advance verification queue if multiple PDFs were uploaded
+    if (pendingVerificationQueue.length > 0) {
+      const [nextMat, ...rest] = pendingVerificationQueue;
+      setPendingVerificationQueue(rest);
+      setActiveVerificationCard(nextMat);
+    } else {
+      setActiveVerificationCard(null);
+    }
+  };
+
+  // Dismiss verification card
+  const handleCloseVerificationCard = () => {
+    if (pendingVerificationQueue.length > 0) {
+      const [nextMat, ...rest] = pendingVerificationQueue;
+      setPendingVerificationQueue(rest);
+      setActiveVerificationCard(nextMat);
+    } else {
+      setActiveVerificationCard(null);
+    }
+  };
+
   // Add material from library
   const addFromLibrary = (mat: UploadedMaterialItem) => {
     setMaterials(prev => {
@@ -613,6 +673,7 @@ export const AssessmentBuilder: React.FC = () => {
       return deduplicateMaterials([...prev, mat]);
     });
     setSelectedMaterialIds(prev => new Set(prev).add(mat.id));
+    setVerifiedMaterialIds(prev => new Set(prev).add(mat.id));
     // Immediately fetch any existing questions for this material into the question pool
     loadQuestionsForSelectedMaterials(null, [mat.id]);
   };
@@ -1056,7 +1117,7 @@ export const AssessmentBuilder: React.FC = () => {
                   }
                 }}
                 className={`transition-all cursor-pointer ${
-                  uploading || isDragging || materials.length > 0
+                  uploading || isDragging || materials.length > 0 || !!activeVerificationCard
                     ? 'animated-dropzone-glow shadow-lg shadow-brand-500/10'
                     : 'border-2 border-dashed border-slate-300 dark:border-white/15 rounded-2xl hover:border-brand-500/60'
                 }`}
@@ -1071,7 +1132,7 @@ export const AssessmentBuilder: React.FC = () => {
               >
                 <div
                   className={`p-6 text-center transition-all ${
-                    uploading || isDragging || materials.length > 0
+                    uploading || isDragging || materials.length > 0 || !!activeVerificationCard
                       ? 'animated-dropzone-inner'
                       : 'rounded-2xl bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60'
                   }`}
@@ -1100,20 +1161,13 @@ export const AssessmentBuilder: React.FC = () => {
                 <div className="mt-6">
                   <PdfTopicVerificationCard
                     material={activeVerificationCard}
-                    onConfirm={() => {
-                      setVerifiedMaterialIds(prev => new Set(prev).add(activeVerificationCard.id));
-                      setSuccess(`Subject "${activeVerificationCard.detected_subject || 'Document'}" confirmed for ${activeVerificationCard.filename}.`);
-                      setActiveVerificationCard(null);
-                    }}
-                    onRemove={() => {
-                      removeMaterial(activeVerificationCard.id);
-                      showToast('error', `Removed ${activeVerificationCard.filename}. You can now select or upload the correct PDF.`);
-                    }}
+                    onConfirm={() => handleConfirmVerification(activeVerificationCard)}
+                    onRemove={() => handleRemovePendingVerification(activeVerificationCard)}
                     onApplyTitle={(suggestedTitle) => {
                       setTitle(suggestedTitle);
                       setSuccess(`Assessment title updated to "${suggestedTitle}"`);
                     }}
-                    onClose={() => setActiveVerificationCard(null)}
+                    onClose={handleCloseVerificationCard}
                   />
                 </div>
               )}
