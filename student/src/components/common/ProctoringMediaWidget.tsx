@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Camera, Mic, Monitor, ShieldCheck, AlertCircle,
   CameraOff, MicOff, MonitorOff, Volume2, Activity,
-  Minimize2, Maximize2, Smartphone, Eye, Sparkles
+  Minimize2, Maximize2, Smartphone, Eye
 } from 'lucide-react';
 import type { DetectedItem } from '../../hooks/useCameraDetection';
 
@@ -309,8 +309,7 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             </div>
 
             {/* AI Guard status tag */}
-            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-slate-900/85 backdrop-blur border border-white/10 text-[9px] font-semibold text-brand-300 flex items-center space-x-1">
-              <Sparkles className="w-2.5 h-2.5 text-brand-400" />
+            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-slate-900/85 backdrop-blur border border-white/10 text-[9px] font-semibold text-brand-300 flex items-center">
               <span>{modelLoaded ? 'AI Guard Active' : 'AI Initializing'}</span>
             </div>
 
