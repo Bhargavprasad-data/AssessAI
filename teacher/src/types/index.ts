@@ -23,6 +23,21 @@ export interface Question {
   retired_at?: string;
 }
 
+export interface UploadedMaterialItem {
+  id: string;
+  filename: string;
+  character_count?: number;
+  size?: number;
+  uploaded_at?: string;
+  detected_subject?: string;
+  detected_category?: string;
+  detected_topics?: string[];
+  document_summary?: string;
+  confidence_score?: number;
+  suggested_title?: string;
+  is_matched?: boolean;
+}
+
 export interface Assessment {
   id: string;
   teacher_id: string;

@@ -12,11 +12,13 @@ import type { AssessmentAnalytics, AttemptReviewItem, Assessment, ViolationEvent
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import { AnalyticsOverviewSkeleton, AttemptsTableSkeleton } from '../components/common/Skeleton';
+import { useAuth } from '../context/AuthContext';
 
 export default function AssessmentAnalyticsPage() {
   const { id: assessmentId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   // State for Ban Modal
   const [selectedStudentForBan, setSelectedStudentForBan] = useState<{ id: string; name: string } | null>(null);
@@ -35,19 +37,15 @@ export default function AssessmentAnalyticsPage() {
       if (!match) throw new Error('Assessment not found');
       return match;
     },
-    enabled: !!assessmentId,
-    retry: true,
-    retryDelay: 2500,
+    enabled: !!assessmentId && !!user,
   });
 
   // Fetch Analytics Data
   const { data: analytics, isLoading: analyticsLoading, isError: analyticsError } = useQuery<AssessmentAnalytics>({
     queryKey: ['assessmentAnalytics', assessmentId],
     queryFn: () => apiFetch<AssessmentAnalytics>(`/api/teacher/assessments/${assessmentId}/analytics`),
-    enabled: !!assessmentId,
-    retry: true,
-    retryDelay: 2500,
-    refetchInterval: 3000,
+    enabled: !!assessmentId && !!user,
+    refetchInterval: (query) => (query.state.error ? false : 3000),
     refetchIntervalInBackground: true,
   });
 
@@ -55,10 +53,8 @@ export default function AssessmentAnalyticsPage() {
   const { data: attempts, isLoading: attemptsLoading, isError: attemptsError } = useQuery<AttemptReviewItem[]>({
     queryKey: ['assessmentAttempts', assessmentId],
     queryFn: () => apiFetch<AttemptReviewItem[]>(`/api/teacher/assessments/${assessmentId}/attempts`),
-    enabled: !!assessmentId,
-    retry: true,
-    retryDelay: 2500,
-    refetchInterval: 3000,
+    enabled: !!assessmentId && !!user,
+    refetchInterval: (query) => (query.state.error ? false : 3000),
     refetchIntervalInBackground: true,
   });
 
@@ -71,6 +67,7 @@ export default function AssessmentAnalyticsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assessmentAttempts', assessmentId] });
+      queryClient.invalidateQueries({ queryKey: ['assessmentAnalytics', assessmentId] });
       setSelectedStudentForBan(null);
       setBanReason('');
       setBanError(null);

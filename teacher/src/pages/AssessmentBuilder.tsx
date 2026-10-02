@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api/client';
-import type { Question } from '../types';
+import type { Question, UploadedMaterialItem } from '../types';
 import { DifficultyBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { cleanQuestionText } from '../utils/textCleaner';
 import {
   UploadCloud, AlertTriangle, Trash2, ArrowRight, CheckCircle2, Loader2,
-  FileText, Plus, X, CheckSquare, Square, FolderOpen, Edit3, Check, Calendar, Clock
+  Plus, X, CheckSquare, Square, FolderOpen, Edit3, Check, Calendar, Clock,
+  Sparkles, Info
 } from 'lucide-react';
-
-interface UploadedMaterialItem {
-  id: string;
-  filename: string;
-  character_count?: number;
-  size?: number;
-  uploaded_at?: string;
-}
+import {
+  SubjectBadge,
+  PdfTopicVerificationCard,
+  PdfTopicDetailModal,
+  getSubjectTheme,
+  renderSubjectIcon
+} from '../components/materials/PdfTopicVerification';
 
 export const AssessmentBuilder: React.FC = () => {
   const { assessmentId } = useParams<{ assessmentId: string }>();
@@ -44,6 +44,11 @@ export const AssessmentBuilder: React.FC = () => {
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
   const [requestedCount, setRequestedCount] = useState<number | ''>(15);
+
+  // Topic Verification & Classification State
+  const [activeVerificationCard, setActiveVerificationCard] = useState<UploadedMaterialItem | null>(null);
+  const [showTopicModal, setShowTopicModal] = useState<UploadedMaterialItem | null>(null);
+  const [verifiedMaterialIds, setVerifiedMaterialIds] = useState<Set<string>>(new Set());
 
   // Questions State
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -492,7 +497,15 @@ export const AssessmentBuilder: React.FC = () => {
         return next;
       });
 
-      setSuccess(`Successfully uploaded and parsed ${newMaterials.length} PDF document(s).`);
+      if (newMaterials.length > 0) {
+        setActiveVerificationCard(newMaterials[0]);
+        const primarySubject = newMaterials[0].detected_subject;
+        if (primarySubject) {
+          setSuccess(`PDF parsed! Detected subject: "${primarySubject}". Please verify below.`);
+        } else {
+          setSuccess(`Successfully uploaded and parsed ${newMaterials.length} PDF document(s).`);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to upload and parse PDF materials.');
     } finally {
@@ -510,6 +523,14 @@ export const AssessmentBuilder: React.FC = () => {
       next.delete(matId);
       return next;
     });
+    setVerifiedMaterialIds(prev => {
+      const next = new Set(prev);
+      next.delete(matId);
+      return next;
+    });
+    if (activeVerificationCard?.id === matId) {
+      setActiveVerificationCard(null);
+    }
   };
 
   // Toggle selection for a material
@@ -562,6 +583,9 @@ export const AssessmentBuilder: React.FC = () => {
         return next;
       });
       setSuccess(`Successfully deleted "${filename}" permanently.`);
+      if (activeVerificationCard?.id === matId) {
+        setActiveVerificationCard(null);
+      }
       setMaterialToDelete(null);
     } catch (err: any) {
       const msg = err.message || '';
@@ -581,6 +605,9 @@ export const AssessmentBuilder: React.FC = () => {
           return next;
         });
         setSuccess(`Removed "${filename}" from view.`);
+        if (activeVerificationCard?.id === matId) {
+          setActiveVerificationCard(null);
+        }
         setMaterialToDelete(null);
       } else {
         setError(msg || 'Failed to delete course material.');
@@ -602,6 +629,7 @@ export const AssessmentBuilder: React.FC = () => {
       setSelectedMaterialIds(new Set());
       setQuestions([]);
       setSelectedQuestionIds(new Set());
+      setActiveVerificationCard(null);
       setSuccess('Successfully deleted all PDF documents from your library.');
       setShowClearLibraryModal(false);
     } catch (err: any) {
@@ -965,6 +993,47 @@ export const AssessmentBuilder: React.FC = () => {
                 </div>
               </div>
 
+              {/* Active Subject Verification Card for Newly Uploaded / Inspected PDF */}
+              {activeVerificationCard && (
+                <div className="mt-6">
+                  <PdfTopicVerificationCard
+                    material={activeVerificationCard}
+                    onConfirm={() => {
+                      setVerifiedMaterialIds(prev => new Set(prev).add(activeVerificationCard.id));
+                      setSuccess(`Subject "${activeVerificationCard.detected_subject || 'Document'}" confirmed for ${activeVerificationCard.filename}.`);
+                      setActiveVerificationCard(null);
+                    }}
+                    onRemove={() => {
+                      removeMaterial(activeVerificationCard.id);
+                      showToast('error', `Removed ${activeVerificationCard.filename}. You can now select or upload the correct PDF.`);
+                    }}
+                    onApplyTitle={(suggestedTitle) => {
+                      setTitle(suggestedTitle);
+                      setSuccess(`Assessment title updated to "${suggestedTitle}"`);
+                    }}
+                    onClose={() => setActiveVerificationCard(null)}
+                  />
+                </div>
+              )}
+
+              {/* Multi-Subject Banner if selected materials belong to multiple subjects */}
+              {materials.filter(m => selectedMaterialIds.has(m.id)).length > 1 && (() => {
+                const selectedMats = materials.filter(m => selectedMaterialIds.has(m.id));
+                const distinctSubjects = Array.from(new Set(selectedMats.map(m => m.detected_subject).filter(Boolean)));
+                if (distinctSubjects.length > 1) {
+                  return (
+                    <div className="mt-4 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-brand-500/10 to-indigo-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-200 flex items-center space-x-2.5">
+                      <Sparkles className="w-5 h-5 text-amber-500 flex-shrink-0 animate-pulse" />
+                      <div>
+                        <strong>Multi-Subject Material Selection:</strong> Your selected PDFs span{' '}
+                        <strong>{distinctSubjects.length} distinct subjects</strong> ({distinctSubjects.join(' & ')}). Generated questions will comprehensively cover each of these domains.
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {/* Uploaded Materials List with Dynamic Border Animation */}
               {materials.length > 0 && (
                 <div className="mt-6 space-y-3">
@@ -995,6 +1064,10 @@ export const AssessmentBuilder: React.FC = () => {
                   <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                     {materials.map((mat) => {
                       const isSelected = selectedMaterialIds.has(mat.id);
+                      const theme = getSubjectTheme(mat.detected_subject, mat.detected_category);
+                      const isVerified = verifiedMaterialIds.has(mat.id);
+                      const topics = mat.detected_topics || [];
+
                       return isSelected ? (
                         <div key={mat.id} className="animated-pdf-card">
                           <div className="animated-pdf-card-inner p-3.5 flex items-center justify-between">
@@ -1006,17 +1079,30 @@ export const AssessmentBuilder: React.FC = () => {
                               >
                                 <CheckSquare className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                               </button>
-                              <div className="w-8 h-8 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 flex-shrink-0">
-                                <FileText className="w-4 h-4" />
+                              <div
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs ${theme.badgeBg} ${theme.badgeText}`}
+                                title={mat.detected_subject || 'Course Material'}
+                              >
+                                {renderSubjectIcon(theme.iconName, 'w-4 h-4')}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p
-                                  className="text-xs font-bold text-slate-900 dark:text-white truncate"
-                                  title={mat.filename}
-                                >
-                                  {mat.filename}
-                                </p>
-                                <div className="flex items-center space-x-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                  <p
+                                    className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[200px]"
+                                    title={mat.filename}
+                                  >
+                                    {mat.filename}
+                                  </p>
+                                  {mat.detected_subject && (
+                                    <SubjectBadge subject={mat.detected_subject} category={mat.detected_category} size="sm" />
+                                  )}
+                                  {isVerified && (
+                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                      ✓ Verified
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center space-x-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex-wrap gap-y-0.5">
                                   {mat.character_count ? (
                                     <span>{mat.character_count.toLocaleString()} chars</span>
                                   ) : (
@@ -1026,11 +1112,71 @@ export const AssessmentBuilder: React.FC = () => {
                                   <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center space-x-1">
                                     <span>✓ Ready for Generation</span>
                                   </span>
+                                  {topics.length > 0 && (
+                                    <>
+                                      <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-white/20" />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setShowTopicModal(mat);
+                                        }}
+                                        className="text-brand-600 dark:text-brand-400 hover:underline font-semibold flex items-center space-x-0.5 cursor-pointer"
+                                      >
+                                        <span>{topics.length} topics detected</span>
+                                        <Info className="w-3 h-3" />
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
+
+                                {/* Subtopic pills */}
+                                {topics.length > 0 && (
+                                  <div className="flex items-center gap-1 mt-1.5 overflow-hidden flex-wrap">
+                                    {topics.slice(0, 3).map((topicItem, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 truncate max-w-[120px]"
+                                      >
+                                        {topicItem}
+                                      </span>
+                                    ))}
+                                    {topics.length > 3 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setShowTopicModal(mat);
+                                        }}
+                                        className="text-[9px] px-1.5 py-0.5 rounded bg-brand-500/10 text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer"
+                                      >
+                                        +{topics.length - 3} more
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
 
                             <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setShowTopicModal(mat)}
+                                className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-500/10 rounded-lg transition-colors cursor-pointer"
+                                title="Inspect detected subject and topics"
+                              >
+                                <Info className="w-4 h-4" />
+                              </button>
+                              {!isVerified && mat.detected_subject && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveVerificationCard(mat)}
+                                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors cursor-pointer"
+                                  title="Verify / Confirm this PDF subject"
+                                >
+                                  <Sparkles className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => removeMaterial(mat.id)}
@@ -1063,27 +1209,46 @@ export const AssessmentBuilder: React.FC = () => {
                             >
                               <Square className="w-5 h-5 text-slate-400" />
                             </button>
-                            <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-500 flex-shrink-0">
-                              <FileText className="w-4 h-4" />
+                            <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-500 flex-shrink-0">
+                              {renderSubjectIcon(theme.iconName, 'w-4 h-4')}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p
-                                className="text-xs font-bold text-slate-900 dark:text-white truncate"
-                                title={mat.filename}
-                              >
-                                {mat.filename}
-                              </p>
+                              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                <p
+                                  className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[200px]"
+                                  title={mat.filename}
+                                >
+                                  {mat.filename}
+                                </p>
+                                {mat.detected_subject && (
+                                  <SubjectBadge subject={mat.detected_subject} category={mat.detected_category} size="sm" />
+                                )}
+                              </div>
                               <div className="flex items-center space-x-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                                 {mat.character_count ? (
                                   <span>{mat.character_count.toLocaleString()} chars</span>
                                 ) : (
                                   <span>PDF Document</span>
                                 )}
+                                {topics.length > 0 && (
+                                  <>
+                                    <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-white/20" />
+                                    <span>{topics.length} topics</span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
 
                           <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setShowTopicModal(mat)}
+                              className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-500/10 rounded-lg transition-colors cursor-pointer"
+                              title="Inspect detected subject and topics"
+                            >
+                              <Info className="w-4 h-4" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => removeMaterial(mat.id)}
@@ -1141,9 +1306,14 @@ export const AssessmentBuilder: React.FC = () => {
                             key={libMat.id}
                             className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between text-xs"
                           >
-                            <span className="truncate max-w-[130px] font-medium text-slate-800 dark:text-slate-200" title={libMat.filename}>
-                              {libMat.filename}
-                            </span>
+                            <div className="flex items-center space-x-2 min-w-0 flex-1">
+                              <span className="truncate max-w-[120px] font-medium text-slate-800 dark:text-slate-200" title={libMat.filename}>
+                                {libMat.filename}
+                              </span>
+                              {libMat.detected_subject && (
+                                <SubjectBadge subject={libMat.detected_subject} category={libMat.detected_category} size="sm" showIcon={false} />
+                              )}
+                            </div>
                             <div className="flex items-center space-x-1.5 flex-shrink-0">
                               {isAdded ? (
                                 <span className="text-[10px] text-emerald-600 font-semibold px-2 py-0.5 rounded bg-emerald-500/10">Added</span>
@@ -2074,6 +2244,13 @@ export const AssessmentBuilder: React.FC = () => {
           </div>
         </Modal>
       )}
+
+      {/* PDF Content Classification & Topic Detail Modal */}
+      <PdfTopicDetailModal
+        material={showTopicModal}
+        isOpen={Boolean(showTopicModal)}
+        onClose={() => setShowTopicModal(null)}
+      />
 
       {/* Floating Toast Notification (Same as Delete Test notification in Manage Assessments) */}
       {toast && (

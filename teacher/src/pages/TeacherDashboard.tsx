@@ -6,9 +6,11 @@ import type { Assessment } from '../types';
 import { StatusBadge } from '../components/common/Badge';
 import { AssessmentCardSkeleton, DashboardHeaderSkeleton } from '../components/common/Skeleton';
 import { FileText, Plus, BarChart3, Clock, BookOpen, Calendar } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const {
     data: assessments,
@@ -17,9 +19,8 @@ export const TeacherDashboard: React.FC = () => {
   } = useQuery<Assessment[]>({
     queryKey: ['teacherAssessments'],
     queryFn: () => apiFetch<Assessment[]>('/api/teacher/assessments'),
-    retry: true,
-    retryDelay: 2500,
-    refetchInterval: 3000,
+    enabled: !!user,
+    refetchInterval: (query) => (query.state.error ? false : 3000),
     refetchIntervalInBackground: true,
   });
 

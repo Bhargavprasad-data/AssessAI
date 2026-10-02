@@ -23,12 +23,14 @@ import { apiFetch } from '../api/client';
 import type { Assessment } from '../types';
 import { StatusBadge } from '../components/common/Badge';
 import { DashboardHeaderSkeleton, AssessmentCardSkeleton } from '../components/common/Skeleton';
+import { useAuth } from '../context/AuthContext';
 
 type TabType = 'all' | 'published' | 'draft' | 'closed';
 
 export const ManageAssessments: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,9 +55,8 @@ export const ManageAssessments: React.FC = () => {
   } = useQuery<Assessment[]>({
     queryKey: ['teacherAssessments'],
     queryFn: () => apiFetch<Assessment[]>('/api/teacher/assessments'),
-    retry: true,
-    retryDelay: 2500,
-    refetchInterval: 5000,
+    enabled: !!user,
+    refetchInterval: (query) => (query.state.error ? false : 5000),
     refetchIntervalInBackground: true,
   });
 

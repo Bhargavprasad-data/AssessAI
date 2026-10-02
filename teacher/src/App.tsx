@@ -14,7 +14,22 @@ import { ShieldAlert, LogOut } from 'lucide-react';
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { refetchOnWindowFocus: false, retry: 1 },
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error: any) => {
+        const msg = String(error?.message || '');
+        if (
+          msg.includes('401') ||
+          msg.includes('status 401') ||
+          msg.includes('403') ||
+          msg.includes('Forbidden') ||
+          msg.includes('Unauthorized')
+        ) {
+          return false;
+        }
+        return failureCount < 1;
+      },
+    },
   },
 });
 

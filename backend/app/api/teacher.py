@@ -1,6 +1,7 @@
 import io
 import os
 import csv
+import json
 import uuid
 import asyncio
 from datetime import datetime, timezone
@@ -26,6 +27,7 @@ from app.schemas.analytics import AssessmentAnalyticsOut, ScoreDistributionBucke
 from app.api.deps import require_teacher, require_teacher_or_admin
 from app.storage.local import get_storage_provider
 from app.services.pdf_service import extract_text_from_pdf, PDFProcessingError
+from app.services.pdf_topic_service import detect_pdf_topic
 from app.services.audit_service import record_audit_event
 from app.services.adaptive_engine import select_next_adaptive_question
 from app.api.websockets import ws_manager
@@ -258,6 +260,8 @@ async def upload_course_material(
         except PDFProcessingError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error in '{f.filename}': {str(e)}")
 
+        topic_info = detect_pdf_topic(extracted_text, f.filename)
+
         # Check for existing material with identical filename for this teacher
         existing_mat = await db.scalar(
             select(CourseMaterial).where(
@@ -275,13 +279,25 @@ async def upload_course_material(
                 pass
             existing_mat.storage_path = storage_path
             existing_mat.uploaded_at = datetime.now(timezone.utc)
+            existing_mat.detected_subject = topic_info.get("subject")
+            existing_mat.detected_category = topic_info.get("category")
+            existing_mat.detected_topics = json.dumps(topic_info.get("topics", []))
+            existing_mat.document_summary = topic_info.get("summary")
+            existing_mat.confidence_score = topic_info.get("confidence")
             # Commit each file individually to avoid holding the write lock across slow I/O
             await db.commit()
             created_materials.append({
                 "id": str(existing_mat.id),
                 "filename": existing_mat.filename,
                 "character_count": len(extracted_text),
-                "uploaded_at": existing_mat.uploaded_at.isoformat()
+                "uploaded_at": existing_mat.uploaded_at.isoformat(),
+                "detected_subject": topic_info.get("subject"),
+                "detected_category": topic_info.get("category"),
+                "detected_topics": topic_info.get("topics", []),
+                "document_summary": topic_info.get("summary"),
+                "confidence_score": topic_info.get("confidence"),
+                "suggested_title": topic_info.get("suggested_title"),
+                "is_matched": topic_info.get("is_matched", True)
             })
         else:
             storage_path = await storage.save_file(content, f"material_{uuid.uuid4().hex}_{f.filename}")
@@ -290,7 +306,12 @@ async def upload_course_material(
                 teacher_id=current_teacher.id,
                 filename=f.filename,
                 storage_path=storage_path,
-                uploaded_at=datetime.now(timezone.utc)
+                uploaded_at=datetime.now(timezone.utc),
+                detected_subject=topic_info.get("subject"),
+                detected_category=topic_info.get("category"),
+                detected_topics=json.dumps(topic_info.get("topics", [])),
+                document_summary=topic_info.get("summary"),
+                confidence_score=topic_info.get("confidence")
             )
             db.add(material)
             # Commit each file individually to avoid holding the write lock across slow I/O
@@ -299,7 +320,14 @@ async def upload_course_material(
                 "id": str(material.id),
                 "filename": material.filename,
                 "character_count": len(extracted_text),
-                "uploaded_at": material.uploaded_at.isoformat()
+                "uploaded_at": material.uploaded_at.isoformat(),
+                "detected_subject": topic_info.get("subject"),
+                "detected_category": topic_info.get("category"),
+                "detected_topics": topic_info.get("topics", []),
+                "document_summary": topic_info.get("summary"),
+                "confidence_score": topic_info.get("confidence"),
+                "suggested_title": topic_info.get("suggested_title"),
+                "is_matched": topic_info.get("is_matched", True)
             })
 
     if len(created_materials) == 1:
@@ -348,6 +376,8 @@ async def upload_multiple_course_materials(
         except PDFProcessingError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error in '{f.filename}': {str(e)}")
 
+        topic_info = detect_pdf_topic(extracted_text, f.filename)
+
         existing_mat = await db.scalar(
             select(CourseMaterial).where(
                 CourseMaterial.teacher_id == current_teacher.id,
@@ -364,12 +394,24 @@ async def upload_multiple_course_materials(
                 pass
             existing_mat.storage_path = storage_path
             existing_mat.uploaded_at = datetime.now(timezone.utc)
+            existing_mat.detected_subject = topic_info.get("subject")
+            existing_mat.detected_category = topic_info.get("category")
+            existing_mat.detected_topics = json.dumps(topic_info.get("topics", []))
+            existing_mat.document_summary = topic_info.get("summary")
+            existing_mat.confidence_score = topic_info.get("confidence")
             await db.commit()  # Per-file commit — releases write lock quickly
             created_materials.append({
                 "id": str(existing_mat.id),
                 "filename": existing_mat.filename,
                 "character_count": len(extracted_text),
-                "uploaded_at": existing_mat.uploaded_at.isoformat()
+                "uploaded_at": existing_mat.uploaded_at.isoformat(),
+                "detected_subject": topic_info.get("subject"),
+                "detected_category": topic_info.get("category"),
+                "detected_topics": topic_info.get("topics", []),
+                "document_summary": topic_info.get("summary"),
+                "confidence_score": topic_info.get("confidence"),
+                "suggested_title": topic_info.get("suggested_title"),
+                "is_matched": topic_info.get("is_matched", True)
             })
         else:
             storage_path = await storage.save_file(content, f"material_{uuid.uuid4().hex}_{f.filename}")
@@ -378,7 +420,12 @@ async def upload_multiple_course_materials(
                 teacher_id=current_teacher.id,
                 filename=f.filename,
                 storage_path=storage_path,
-                uploaded_at=datetime.now(timezone.utc)
+                uploaded_at=datetime.now(timezone.utc),
+                detected_subject=topic_info.get("subject"),
+                detected_category=topic_info.get("category"),
+                detected_topics=json.dumps(topic_info.get("topics", [])),
+                document_summary=topic_info.get("summary"),
+                confidence_score=topic_info.get("confidence")
             )
             db.add(material)
             await db.commit()  # Per-file commit — releases write lock quickly
@@ -386,7 +433,14 @@ async def upload_multiple_course_materials(
                 "id": str(material.id),
                 "filename": material.filename,
                 "character_count": len(extracted_text),
-                "uploaded_at": material.uploaded_at.isoformat()
+                "uploaded_at": material.uploaded_at.isoformat(),
+                "detected_subject": topic_info.get("subject"),
+                "detected_category": topic_info.get("category"),
+                "detected_topics": topic_info.get("topics", []),
+                "document_summary": topic_info.get("summary"),
+                "confidence_score": topic_info.get("confidence"),
+                "suggested_title": topic_info.get("suggested_title"),
+                "is_matched": topic_info.get("is_matched", True)
             })
 
     return created_materials
@@ -410,13 +464,64 @@ async def list_course_materials(
     for m in materials:
         if m.id not in seen_ids:
             seen_ids.add(m.id)
+            topics = []
+            if m.detected_topics:
+                try:
+                    topics = json.loads(m.detected_topics)
+                except Exception:
+                    topics = [m.detected_topics]
             deduped.append({
                 "id": str(m.id),
                 "filename": m.filename,
-                "uploaded_at": m.uploaded_at.isoformat()
+                "uploaded_at": m.uploaded_at.isoformat(),
+                "detected_subject": m.detected_subject,
+                "detected_category": m.detected_category,
+                "detected_topics": topics,
+                "document_summary": m.document_summary,
+                "confidence_score": m.confidence_score
             })
 
     return deduped
+
+
+@router.post("/materials/{material_id}/analyze")
+async def analyze_course_material(
+    material_id: uuid.UUID,
+    current_teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    material = await db.get(CourseMaterial, material_id)
+    if not material or material.teacher_id != current_teacher.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+
+    storage = get_storage_provider()
+    try:
+        content = await storage.get_file(material.storage_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File content not found in storage")
+
+    extracted_text = extract_text_from_pdf(content)
+    topic_info = detect_pdf_topic(extracted_text, material.filename)
+
+    material.detected_subject = topic_info.get("subject")
+    material.detected_category = topic_info.get("category")
+    material.detected_topics = json.dumps(topic_info.get("topics", []))
+    material.document_summary = topic_info.get("summary")
+    material.confidence_score = topic_info.get("confidence")
+    await db.commit()
+
+    return {
+        "id": str(material.id),
+        "filename": material.filename,
+        "character_count": len(extracted_text),
+        "detected_subject": material.detected_subject,
+        "detected_category": material.detected_category,
+        "detected_topics": topic_info.get("topics", []),
+        "document_summary": material.document_summary,
+        "confidence_score": material.confidence_score,
+        "suggested_title": topic_info.get("suggested_title"),
+        "is_matched": topic_info.get("is_matched", True)
+    }
 
 
 @router.delete("/materials")
@@ -1359,10 +1464,13 @@ async def apply_assessment_ban(
     active_attempts = (await db.scalars(stmt)).all()
     for att in active_attempts:
         att.status = "terminated"
-        att.completion_reason = "manual_teacher_ban"
+        att.completion_reason = "banned"
         att.submitted_at = now
 
-    await db.commit()
+    ban_id = existing_ban.id
+    banned_at = existing_ban.banned_at
+
+    await db.flush()
 
     # Broadcast real-time termination signal so student's screen locks immediately
     await ws_manager.broadcast_violation_signal(
@@ -1385,14 +1493,23 @@ async def apply_assessment_ban(
         actor_user_id=current_teacher.id,
         action="assessment_ban_applied",
         target_type="assessment_ban",
-        target_id=existing_ban.id,
+        target_id=ban_id,
         metadata={"student_id": str(student.id), "assessment_id": str(assessment.id), "reason": ban_reason}
     )
     await db.commit()
 
-    out = BanOut.model_validate(existing_ban)
-    out.student_name = student.name
-    return out
+    return BanOut(
+        id=ban_id,
+        assessment_id=assessment.id,
+        student_id=student.id,
+        student_name=student.name,
+        banned_at=banned_at,
+        banned_by=current_teacher.id,
+        ban_source="manual_teacher",
+        reason=ban_reason,
+        revoked_at=None,
+        revoked_by=None
+    )
 
 
 @router.delete("/assessments/{assessment_id}/bans/{student_id}")

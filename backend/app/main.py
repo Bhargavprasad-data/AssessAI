@@ -71,20 +71,37 @@ app.add_middleware(
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.exceptions import RequestValidationError
 
+
+def _cors_headers(request: Request) -> dict:
+    origin = request.headers.get("origin")
+    if origin:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    return {}
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    headers = {**_cors_headers(request), **(getattr(exc, "headers", None) or {})}
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
-        headers=getattr(exc, "headers", None)
+        headers=headers
     )
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors()}
+        content={"detail": exc.errors()},
+        headers=_cors_headers(request)
     )
+
 
 # Global Exception Handler for true unexpected exceptions
 @app.exception_handler(Exception)
@@ -97,7 +114,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": detail_msg}
+        content={"detail": detail_msg},
+        headers=_cors_headers(request)
     )
 
 

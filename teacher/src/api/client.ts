@@ -69,6 +69,14 @@ export async function attemptTokenRefresh(): Promise<boolean> {
         }
         return true;
       }
+      if (res.status === 401 || res.status === 403) {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('cached_user');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:expired'));
+        }
+      }
       return false;
     } catch {
       return false;
@@ -144,6 +152,13 @@ export async function apiFetch<T>(
     const refreshed = await attemptTokenRefresh();
     if (refreshed) {
       return apiFetch<T>(url, options, true);
+    } else {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('cached_user');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }
     }
   }
 
