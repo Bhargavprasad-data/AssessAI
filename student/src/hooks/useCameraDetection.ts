@@ -9,10 +9,20 @@ export interface DetectedItem {
   bbox: [number, number, number, number]; // [x, y, width, height]
 }
 
+export type FaceVerificationStatus =
+  | 'no_camera'
+  | 'initializing'
+  | 'detecting'
+  | 'face_detected'
+  | 'no_face'
+  | 'multiple_faces'
+  | 'camera_covered';
+
 export interface UseCameraDetectionOptions {
   cameraStream: MediaStream | null;
   isCameraActive: boolean;
   isActive: boolean;
+  isSimulatedHardware?: boolean;
   onViolation?: (type: string, metadata?: Record<string, any>) => void;
 }
 
@@ -20,6 +30,7 @@ export function useCameraDetection({
   cameraStream,
   isCameraActive,
   isActive,
+  isSimulatedHardware = false,
   onViolation,
 }: UseCameraDetectionOptions) {
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
@@ -27,14 +38,29 @@ export function useCameraDetection({
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
   const [mobileWarningActive, setMobileWarningActive] = useState<boolean>(false);
 
+  // Face Verification State
+  const [faceStatus, setFaceStatus] = useState<FaceVerificationStatus>('no_camera');
+  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
+  const [isCameraCovered, setIsCameraCovered] = useState<boolean>(false);
+  const [personCount, setPersonCount] = useState<number>(0);
+
   const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const lastInferenceTimeRef = useRef<number>(0);
   const isDetectingRef = useRef<boolean>(false);
   const lastViolationTimeRef = useRef<{ [key: string]: number }>({});
+  const faceDetectorRef = useRef<any>(null);
 
-  // Discrete Incident State Machine Refs (Each physical appearance counts as exactly 1 strike)
+  // Consecutive counters for stability
+  const coveredConsecutiveFramesRef = useRef<number>(0);
+  const facePresentConsecutiveRef = useRef<number>(0);
+  const noFaceConsecutiveFramesRef = useRef<number>(0);
+  const multipleFacesConsecutiveFramesRef = useRef<number>(0);
+  const multipleFacesNormalConsecutiveRef = useRef<number>(0);
+
+  // Incident State Machine Refs for exam violations
   const phoneIncidentActiveRef = useRef<boolean>(false);
   const phoneConsecutiveFramesRef = useRef<number>(0);
   const phoneAbsentConsecutiveRef = useRef<number>(0);
@@ -44,12 +70,7 @@ export function useCameraDetection({
   const bookAbsentConsecutiveRef = useRef<number>(0);
 
   const multipleFacesIncidentActiveRef = useRef<boolean>(false);
-  const multipleFacesConsecutiveFramesRef = useRef<number>(0);
-  const multipleFacesNormalConsecutiveRef = useRef<number>(0);
-
   const noFaceIncidentActiveRef = useRef<boolean>(false);
-  const noFaceConsecutiveFramesRef = useRef<number>(0);
-  const facePresentConsecutiveRef = useRef<number>(0);
 
   const lookingAwayIncidentActiveRef = useRef<boolean>(false);
   const lookingAwayConsecutiveFramesRef = useRef<number>(0);
@@ -152,15 +173,27 @@ export function useCameraDetection({
     onViolation?.(type, metadata);
   }, [onViolation]);
 
-  // 4. Fast & Accurate AI Object Detection Loop
+  // 4. Continuous AI Object & Face Detection Loop (Runs both in setup and exam session)
   useEffect(() => {
-    if (!isActive || !isCameraActive || !cameraStream || !modelLoaded || !modelRef.current) {
+    if (!isCameraActive || !cameraStream) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
       setDetectedItems([]);
       setMobileWarningActive(false);
+      setFaceStatus('no_camera');
+      setIsFaceDetected(false);
+      setIsCameraCovered(false);
+      setPersonCount(0);
+      return;
+    }
+
+    if (isSimulatedHardware) {
+      setFaceStatus('face_detected');
+      setIsFaceDetected(true);
+      setIsCameraCovered(false);
+      setPersonCount(1);
       return;
     }
 
@@ -170,192 +203,255 @@ export function useCameraDetection({
       if (!isRunning) return;
 
       const now = Date.now();
-      // Run inference every 120ms
+      // Run inference every 120ms for smooth, responsive detection without overloading GPU
       if (now - lastInferenceTimeRef.current >= 120 && !isDetectingRef.current) {
-        const liveVideo = (document.getElementById('proctoring-live-video') as HTMLVideoElement) || hiddenVideoRef.current;
-        const model = modelRef.current;
+        const liveVideo =
+          (document.getElementById('setup-camera-video') as HTMLVideoElement) ||
+          (document.getElementById('proctoring-live-video') as HTMLVideoElement) ||
+          hiddenVideoRef.current;
 
-        if (liveVideo && model && liveVideo.readyState >= 2 && liveVideo.videoWidth > 0) {
+        if (liveVideo && liveVideo.readyState >= 2 && liveVideo.videoWidth > 0) {
           isDetectingRef.current = true;
           lastInferenceTimeRef.current = now;
 
           try {
-            // High-speed direct WebGL tensor detection directly from video element
-            const predictions = await model.detect(liveVideo, 15, 0.30);
-
-            const validDetections: DetectedItem[] = predictions.map((p) => ({
-              class: p.class.toLowerCase(),
-              score: p.score,
-              bbox: p.bbox,
-            }));
-
-            setDetectedItems(validDetections);
-
-            const w = liveVideo.videoWidth || 640;
-            const h = liveVideo.videoHeight || 480;
-
-            // -------------------------------------------------------------
-            // A. MOBILE PHONE DETECTION (Strictly targeted at confirmed cell phones)
-            // Filters out false positives (hands, pens, remotes, ambient shadows)
-            // -------------------------------------------------------------
-            const phoneDetection = validDetections.find((d) => {
-              const c = d.class.toLowerCase();
-              if (c === 'cell phone' || c === 'telephone') {
-                const [, , bw, bh] = d.bbox;
-                const bboxArea = bw * bh;
-                const totalArea = w * h;
-                // Verify high confidence (>= 0.65) and realistic physical proportions
-                const isPlausibleSize = bboxArea > 400 && bboxArea < (totalArea * 0.85);
-                return d.score >= 0.65 && isPlausibleSize;
+            // 1. Direct luminance check to detect covered / black / obscured camera
+            let frameIsCovered = false;
+            let avgBrightness = 100;
+            try {
+              if (!canvasRef.current) {
+                canvasRef.current = document.createElement('canvas');
               }
-              return false;
-            });
-
-            if (phoneDetection) {
-              phoneConsecutiveFramesRef.current += 1;
-              phoneAbsentConsecutiveRef.current = 0;
-
-              // Require sustained presence over 6 consecutive frames (~750ms) to avoid transient flickers
-              if (phoneConsecutiveFramesRef.current >= 6) {
-                setMobileWarningActive(true);
-
-                // If newly detected in this physical appearance, trigger exactly 1 strike
-                if (!phoneIncidentActiveRef.current) {
-                  phoneIncidentActiveRef.current = true;
-                  triggerViolation(
-                    'mobile_detected',
-                    {
-                      object: 'Mobile Phone',
-                      detected_class: phoneDetection.class,
-                      confidence: Math.round(phoneDetection.score * 100),
-                      bbox: phoneDetection.bbox,
-                    },
-                    'Warning: Mobile phone detected. Close your mobile and please write your exam.'
-                  );
+              const canvas = canvasRef.current;
+              canvas.width = 32;
+              canvas.height = 24;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              if (ctx) {
+                ctx.drawImage(liveVideo, 0, 0, 32, 24);
+                const imgData = ctx.getImageData(0, 0, 32, 24);
+                const data = imgData.data;
+                let sum = 0;
+                const count = data.length / 4;
+                for (let i = 0; i < data.length; i += 4) {
+                  sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
                 }
+                avgBrightness = sum / count;
+                // Average luminance < 14 indicates lens is covered, closed, taped, or pitch black
+                frameIsCovered = avgBrightness < 14;
               }
-            } else {
-              phoneConsecutiveFramesRef.current = 0;
-              phoneAbsentConsecutiveRef.current += 1;
-              // Reset incident only after 25 consecutive clean frames (~3 seconds of sustained absence)
-              if (phoneAbsentConsecutiveRef.current >= 25) {
-                setMobileWarningActive(false);
-                phoneIncidentActiveRef.current = false;
-              }
+            } catch {
+              // canvas draw error fallback
             }
 
-            // -------------------------------------------------------------
-            // B. UNAUTHORIZED STUDY MATERIALS / BOOKS
-            // -------------------------------------------------------------
-            const bookDetection = validDetections.find((d) => {
-              const c = d.class.toLowerCase();
-              return c === 'book' && d.score >= 0.65;
-            });
-
-            if (bookDetection && !phoneDetection) {
-              bookConsecutiveFramesRef.current += 1;
-              bookAbsentConsecutiveRef.current = 0;
-              if (bookConsecutiveFramesRef.current >= 6 && !bookIncidentActiveRef.current) {
-                bookIncidentActiveRef.current = true;
-                triggerViolation(
-                  'unauthorized_object',
-                  {
-                    object: 'Study Material / Book',
-                    detected_class: bookDetection.class,
-                    confidence: Math.round(bookDetection.score * 100),
-                  },
-                  'Warning: Unauthorized study material detected. Please remove it and write your exam.'
-                );
-              }
-            } else {
-              bookConsecutiveFramesRef.current = 0;
-              bookAbsentConsecutiveRef.current += 1;
-              if (bookAbsentConsecutiveRef.current >= 25) {
-                bookIncidentActiveRef.current = false;
-              }
-            }
-
-            // -------------------------------------------------------------
-            // C. PERSONS / MULTIPLE FACES / NO FACE
-            // -------------------------------------------------------------
-            const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.55);
-
-            // Multiple persons in camera view
-            if (persons.length > 1) {
-              multipleFacesConsecutiveFramesRef.current += 1;
-              multipleFacesNormalConsecutiveRef.current = 0;
-              if (multipleFacesConsecutiveFramesRef.current >= 6 && !multipleFacesIncidentActiveRef.current) {
-                multipleFacesIncidentActiveRef.current = true;
-                triggerViolation(
-                  'multiple_faces',
-                  {
-                    count: persons.length,
-                    message: `${persons.length} persons detected in camera frame`,
-                  },
-                  'Warning: Multiple persons detected in camera frame.'
-                );
-              }
-              noFaceConsecutiveFramesRef.current = 0;
-              lookingAwayConsecutiveFramesRef.current = 0;
-            } else {
-              multipleFacesConsecutiveFramesRef.current = 0;
-              multipleFacesNormalConsecutiveRef.current += 1;
-              if (multipleFacesNormalConsecutiveRef.current >= 20) {
-                multipleFacesIncidentActiveRef.current = false;
-              }
-            }
-
-            // No face / Candidate absent
-            if (persons.length === 0) {
+            if (frameIsCovered) {
+              coveredConsecutiveFramesRef.current += 1;
               facePresentConsecutiveRef.current = 0;
-              noFaceConsecutiveFramesRef.current += 1;
-              lookingAwayConsecutiveFramesRef.current = 0;
-
-              // Require 12 consecutive absent frames (~1.5s) to prevent single-frame blinks or brief posture shifts
-              if (noFaceConsecutiveFramesRef.current >= 12 && !noFaceIncidentActiveRef.current) {
-                noFaceIncidentActiveRef.current = true;
-                triggerViolation(
-                  'no_face',
-                  { message: 'Candidate face not visible in camera frame' },
-                  'Warning: Face not visible. Please look at the camera to write your exam.'
-                );
-              }
-            } else {
-              facePresentConsecutiveRef.current += 1;
-              noFaceConsecutiveFramesRef.current = 0;
-              if (facePresentConsecutiveRef.current >= 8) {
-                noFaceIncidentActiveRef.current = false;
-              }
-            }
-
-            // Looking away / Gaze deviation (when single person is present)
-            if (persons.length === 1) {
-              const candidate = persons[0];
-              const [px, py, pw, ph] = candidate.bbox;
-              const centerX = (px + pw / 2) / w;
-              const centerY = (py + ph / 2) / h;
-
-              const isLookingAway = centerX < 0.08 || centerX > 0.92 || centerY > 0.92;
-
-              if (isLookingAway) {
-                lookingNormalConsecutiveRef.current = 0;
-                lookingAwayConsecutiveFramesRef.current += 1;
-                if (lookingAwayConsecutiveFramesRef.current >= 14 && !lookingAwayIncidentActiveRef.current) {
-                  lookingAwayIncidentActiveRef.current = true;
+              if (coveredConsecutiveFramesRef.current >= 2) {
+                setIsCameraCovered(true);
+                setFaceStatus('camera_covered');
+                setIsFaceDetected(false);
+                setPersonCount(0);
+                if (isActive) {
                   triggerViolation(
-                    'looking_away',
-                    {
-                      position: { centerX: Math.round(centerX * 100), centerY: Math.round(centerY * 100) },
-                      message: 'Gaze / head pose deviated from examination screen',
-                    },
-                    'Warning: Looking away from screen detected. Please face the screen to write your exam.'
+                    'camera_covered',
+                    { brightness: Math.round(avgBrightness) },
+                    'Warning: Camera feed appears covered or pitch black. Please uncover your camera.'
                   );
                 }
+              }
+            } else {
+              coveredConsecutiveFramesRef.current = 0;
+              setIsCameraCovered(false);
+
+              // 2. AI Person & Face Detection
+              const model = modelRef.current;
+              if (!model) {
+                setFaceStatus('initializing');
+                setIsFaceDetected(false);
               } else {
-                lookingNormalConsecutiveRef.current += 1;
-                lookingAwayConsecutiveFramesRef.current = 0;
-                if (lookingNormalConsecutiveRef.current >= 10) {
-                  lookingAwayIncidentActiveRef.current = false;
+                const predictions = await model.detect(liveVideo, 15, 0.30);
+                const validDetections: DetectedItem[] = predictions.map((p) => ({
+                  class: p.class.toLowerCase(),
+                  score: p.score,
+                  bbox: p.bbox,
+                }));
+                setDetectedItems(validDetections);
+
+                const w = liveVideo.videoWidth || 640;
+                const h = liveVideo.videoHeight || 480;
+
+                // Candidate / Persons Detection
+                const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.45);
+                setPersonCount(persons.length);
+
+                // Optional native FaceDetector double check if supported in browser
+                let nativeFaceCount = 0;
+                if (typeof (window as any).FaceDetector !== 'undefined') {
+                  try {
+                    if (!faceDetectorRef.current) {
+                      faceDetectorRef.current = new (window as any).FaceDetector({ fastMode: true, maxDetectedFaces: 5 });
+                    }
+                    const faces = await faceDetectorRef.current.detect(liveVideo);
+                    if (faces && Array.isArray(faces)) {
+                      nativeFaceCount = faces.length;
+                    }
+                  } catch {}
+                }
+
+                if (persons.length === 0 && nativeFaceCount === 0) {
+                  facePresentConsecutiveRef.current = 0;
+                  noFaceConsecutiveFramesRef.current += 1;
+                  lookingAwayConsecutiveFramesRef.current = 0;
+
+                  if (noFaceConsecutiveFramesRef.current >= 2) {
+                    setFaceStatus('no_face');
+                    setIsFaceDetected(false);
+                  }
+
+                  if (isActive && noFaceConsecutiveFramesRef.current >= 12 && !noFaceIncidentActiveRef.current) {
+                    noFaceIncidentActiveRef.current = true;
+                    triggerViolation(
+                      'no_face',
+                      { message: 'Candidate face not visible in camera frame' },
+                      'Warning: Face not visible. Please look at the camera to write your exam.'
+                    );
+                  }
+                } else if (persons.length > 1 || nativeFaceCount > 1) {
+                  facePresentConsecutiveRef.current = 0;
+                  setFaceStatus('multiple_faces');
+                  setIsFaceDetected(false);
+
+                  if (isActive) {
+                    multipleFacesConsecutiveFramesRef.current += 1;
+                    multipleFacesNormalConsecutiveRef.current = 0;
+                    if (multipleFacesConsecutiveFramesRef.current >= 6 && !multipleFacesIncidentActiveRef.current) {
+                      multipleFacesIncidentActiveRef.current = true;
+                      triggerViolation(
+                        'multiple_faces',
+                        {
+                          count: Math.max(persons.length, nativeFaceCount),
+                          message: `${Math.max(persons.length, nativeFaceCount)} persons detected in camera frame`,
+                        },
+                        'Warning: Multiple persons detected in camera frame.'
+                      );
+                    }
+                  }
+                } else {
+                  // Exactly 1 person/face detected
+                  const candidate = persons[0];
+                  const [, , pw, ph] = candidate ? candidate.bbox : [0, 0, 100, 100];
+                  if (pw > 35 && ph > 35) {
+                    facePresentConsecutiveRef.current += 1;
+                    noFaceConsecutiveFramesRef.current = 0;
+                    if (facePresentConsecutiveRef.current >= 2) {
+                      setFaceStatus('face_detected');
+                      setIsFaceDetected(true);
+                      noFaceIncidentActiveRef.current = false;
+                    }
+                  }
+
+                  // Looking away check during active exam
+                  if (isActive && candidate) {
+                    const [px, py] = candidate.bbox;
+                    const centerX = (px + pw / 2) / w;
+                    const centerY = (py + ph / 2) / h;
+                    const isLookingAway = centerX < 0.08 || centerX > 0.92 || centerY > 0.92;
+
+                    if (isLookingAway) {
+                      lookingNormalConsecutiveRef.current = 0;
+                      lookingAwayConsecutiveFramesRef.current += 1;
+                      if (lookingAwayConsecutiveFramesRef.current >= 14 && !lookingAwayIncidentActiveRef.current) {
+                        lookingAwayIncidentActiveRef.current = true;
+                        triggerViolation(
+                          'looking_away',
+                          {
+                            position: { centerX: Math.round(centerX * 100), centerY: Math.round(centerY * 100) },
+                            message: 'Gaze / head pose deviated from examination screen',
+                          },
+                          'Warning: Looking away from screen detected. Please face the screen to write your exam.'
+                        );
+                      }
+                    } else {
+                      lookingNormalConsecutiveRef.current += 1;
+                      lookingAwayConsecutiveFramesRef.current = 0;
+                      if (lookingNormalConsecutiveRef.current >= 10) {
+                        lookingAwayIncidentActiveRef.current = false;
+                      }
+                    }
+                  }
+                }
+
+                // If active exam, also check for cell phones and study materials
+                if (isActive) {
+                  // A. Mobile phone detection
+                  const phoneDetection = validDetections.find((d) => {
+                    const c = d.class.toLowerCase();
+                    if (c === 'cell phone' || c === 'telephone') {
+                      const [, , bw, bh] = d.bbox;
+                      const bboxArea = bw * bh;
+                      const totalArea = w * h;
+                      const isPlausibleSize = bboxArea > 400 && bboxArea < (totalArea * 0.85);
+                      return d.score >= 0.65 && isPlausibleSize;
+                    }
+                    return false;
+                  });
+
+                  if (phoneDetection) {
+                    phoneConsecutiveFramesRef.current += 1;
+                    phoneAbsentConsecutiveRef.current = 0;
+                    if (phoneConsecutiveFramesRef.current >= 6) {
+                      setMobileWarningActive(true);
+                      if (!phoneIncidentActiveRef.current) {
+                        phoneIncidentActiveRef.current = true;
+                        triggerViolation(
+                          'mobile_detected',
+                          {
+                            object: 'Mobile Phone',
+                            detected_class: phoneDetection.class,
+                            confidence: Math.round(phoneDetection.score * 100),
+                            bbox: phoneDetection.bbox,
+                          },
+                          'Warning: Mobile phone detected. Close your mobile and please write your exam.'
+                        );
+                      }
+                    }
+                  } else {
+                    phoneConsecutiveFramesRef.current = 0;
+                    phoneAbsentConsecutiveRef.current += 1;
+                    if (phoneAbsentConsecutiveRef.current >= 25) {
+                      phoneIncidentActiveRef.current = false;
+                      setMobileWarningActive(false);
+                    }
+                  }
+
+                  // B. Study Material / Book detection
+                  const bookDetection = validDetections.find((d) => {
+                    const c = d.class.toLowerCase();
+                    return c === 'book' && d.score >= 0.65;
+                  });
+
+                  if (bookDetection && !phoneDetection) {
+                    bookConsecutiveFramesRef.current += 1;
+                    bookAbsentConsecutiveRef.current = 0;
+                    if (bookConsecutiveFramesRef.current >= 6 && !bookIncidentActiveRef.current) {
+                      bookIncidentActiveRef.current = true;
+                      triggerViolation(
+                        'unauthorized_object',
+                        {
+                          object: 'Study Material / Book',
+                          detected_class: bookDetection.class,
+                          confidence: Math.round(bookDetection.score * 100),
+                        },
+                        'Warning: Unauthorized study material detected. Please remove it and write your exam.'
+                      );
+                    }
+                  } else {
+                    bookConsecutiveFramesRef.current = 0;
+                    bookAbsentConsecutiveRef.current += 1;
+                    if (bookAbsentConsecutiveRef.current >= 25) {
+                      bookIncidentActiveRef.current = false;
+                    }
+                  }
                 }
               }
             }
@@ -381,12 +477,16 @@ export function useCameraDetection({
         animationFrameRef.current = null;
       }
     };
-  }, [isActive, isCameraActive, cameraStream, modelLoaded, triggerViolation]);
+  }, [isActive, isCameraActive, cameraStream, isSimulatedHardware, triggerViolation]);
 
   return {
     modelLoaded,
     isModelLoading,
     detectedItems,
     mobileWarningActive,
+    faceStatus,
+    isFaceDetected,
+    isCameraCovered,
+    personCount,
   };
 }

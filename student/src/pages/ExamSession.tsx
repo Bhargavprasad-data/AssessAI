@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   ShieldAlert, Clock, AlertTriangle, ArrowRight, EyeOff, Maximize, Minimize,
   Camera, Mic, Monitor, CheckCircle2, Smartphone, ListChecks, ShieldCheck,
-  Send, FileText, RotateCcw, Calendar, Lock
+  Send, FileText, RotateCcw, Calendar, Lock, Loader2
 } from 'lucide-react';
 
 export const ExamSession: React.FC = () => {
@@ -104,6 +104,7 @@ export const ExamSession: React.FC = () => {
     isCameraActive,
     isMicActive,
     isScreenSharing,
+    isSimulatedHardware,
     audioLevel,
     mediaError,
     requestCamera,
@@ -124,10 +125,13 @@ export const ExamSession: React.FC = () => {
     modelLoaded,
     detectedItems,
     mobileWarningActive,
+    faceStatus,
+    isFaceDetected,
   } = useCameraDetection({
     cameraStream,
     isCameraActive,
     isActive: hasConsented && !terminatedReason && !!attemptId,
+    isSimulatedHardware,
     onViolation: (type, metadata) => {
       if (hasConsented && attemptId) {
         reportViolation(type, metadata);
@@ -515,7 +519,7 @@ export const ExamSession: React.FC = () => {
 
   // 1. Consent Screen (Shown before exam starts)
   if (!hasConsented) {
-    const isHardwareReady = isCameraActive && isMicActive && isScreenSharing;
+    const isHardwareReady = isCameraActive && isFaceDetected && isMicActive && isScreenSharing;
     const isExpired = !!assessmentMeta?.is_expired;
     const isUpcoming = !!assessmentMeta?.is_upcoming;
     const isBlockedBySchedule = isExpired || isUpcoming;
@@ -624,18 +628,50 @@ export const ExamSession: React.FC = () => {
                 type="button"
                 onClick={requestCamera}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                  isCameraActive
+                  isFaceDetected && isCameraActive
                     ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/40 text-emerald-800 dark:text-emerald-300 shadow-md shadow-emerald-500/10'
+                    : isCameraActive
+                    ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-300 shadow-md shadow-amber-500/10'
                     : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <Camera className={`w-5 h-5 ${isCameraActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-brand-600 dark:text-brand-400'}`} />
-                  {isCameraActive && <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
+                  <Camera className={`w-5 h-5 ${
+                    isFaceDetected && isCameraActive
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : isCameraActive
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-brand-600 dark:text-brand-400'
+                  }`} />
+                  {isFaceDetected && isCameraActive ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  ) : isCameraActive ? (
+                    faceStatus === 'initializing' ? (
+                      <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />
+                    )
+                  ) : null}
                 </div>
                 <span className="text-xs font-bold">1. Face Camera</span>
-                <span className={`text-[10px] mt-0.5 ${isCameraActive ? 'text-emerald-700 dark:text-emerald-300 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
-                  {isCameraActive ? '✓ Camera Active' : 'Click to Enable'}
+                <span className={`text-[10px] mt-0.5 ${
+                  isFaceDetected && isCameraActive
+                    ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
+                    : isCameraActive
+                    ? 'text-amber-700 dark:text-amber-300 font-semibold'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}>
+                  {!isCameraActive
+                    ? 'Click to Enable'
+                    : isFaceDetected
+                    ? '✓ Face Verified'
+                    : faceStatus === 'camera_covered'
+                    ? '⚠️ Camera Covered'
+                    : faceStatus === 'multiple_faces'
+                    ? '⚠️ Multiple Faces'
+                    : faceStatus === 'initializing'
+                    ? 'Scanning for Face...'
+                    : '⚠️ No Face Detected'}
                 </span>
               </button>
 
@@ -682,9 +718,22 @@ export const ExamSession: React.FC = () => {
 
             {/* Live Camera Preview Box once camera is active */}
             {isCameraActive && cameraStream && (
-              <div className="mt-3 p-3 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center space-x-3">
-                <div className="w-24 h-16 rounded-lg overflow-hidden bg-slate-900 border border-emerald-500/40 relative flex-shrink-0">
+              <div className={`mt-3 p-3 rounded-xl border flex items-center space-x-3.5 transition-all ${
+                isFaceDetected
+                  ? 'bg-slate-950 border-emerald-500/40 shadow-md shadow-emerald-500/10'
+                  : faceStatus === 'camera_covered'
+                  ? 'bg-rose-950/40 border-rose-500/50 shadow-md shadow-rose-500/10'
+                  : 'bg-amber-950/40 border-amber-500/50 shadow-md shadow-amber-500/10'
+              }`}>
+                <div className={`w-28 h-20 rounded-lg overflow-hidden bg-slate-900 border relative flex-shrink-0 ${
+                  isFaceDetected
+                    ? 'border-emerald-500/60'
+                    : faceStatus === 'camera_covered'
+                    ? 'border-rose-500/60'
+                    : 'border-amber-500/60'
+                }`}>
                   <video
+                    id="setup-camera-video"
                     ref={attachSetupVideoRef}
                     autoPlay
                     playsInline
@@ -692,13 +741,45 @@ export const ExamSession: React.FC = () => {
                     className="w-full h-full object-cover"
                     style={{ transform: 'scaleX(-1)' }}
                   />
-                  <span className="absolute bottom-1 right-1 text-[8px] bg-emerald-500 text-slate-950 font-bold px-1 rounded">
-                    LIVE
+                  <span className={`absolute bottom-1 right-1 text-[8px] font-bold px-1.5 py-0.5 rounded shadow-xs ${
+                    isFaceDetected
+                      ? 'bg-emerald-500 text-slate-950'
+                      : faceStatus === 'camera_covered'
+                      ? 'bg-rose-500 text-white'
+                      : 'bg-amber-500 text-slate-950'
+                  }`}>
+                    {isFaceDetected ? 'FACE OK' : faceStatus === 'camera_covered' ? 'BLACK' : 'NO FACE'}
                   </span>
                 </div>
                 <div className="flex-1 text-xs">
-                  <p className="font-semibold text-emerald-300">Face Camera Preview Active</p>
-                  <p className="text-[11px] text-slate-400">Position yourself centrally within your camera view.</p>
+                  <div className="flex items-center space-x-2">
+                    <p className={`font-bold text-sm ${
+                      isFaceDetected
+                        ? 'text-emerald-400'
+                        : faceStatus === 'camera_covered'
+                        ? 'text-rose-400'
+                        : 'text-amber-400'
+                    }`}>
+                      {isFaceDetected
+                        ? '✓ Face Detected & Verified'
+                        : faceStatus === 'camera_covered'
+                        ? 'Camera Feed Dark / Covered'
+                        : faceStatus === 'multiple_faces'
+                        ? 'Multiple Faces Detected'
+                        : faceStatus === 'initializing'
+                        ? 'Scanning for Face...'
+                        : 'Face Not Detected'}
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                    {isFaceDetected
+                      ? 'Your face is clearly visible and centered. Keep facing the camera.'
+                      : faceStatus === 'camera_covered'
+                      ? 'The camera feed is pitch black or covered. Uncover your lens and check room lighting.'
+                      : faceStatus === 'multiple_faces'
+                      ? 'Multiple people detected in view. Only the candidate is permitted in the exam.'
+                      : 'Position yourself directly in front of the camera with good lighting to proceed.'}
+                  </p>
                 </div>
               </div>
             )}
@@ -770,7 +851,7 @@ export const ExamSession: React.FC = () => {
           <button
             onClick={handleJoinAttempt}
             disabled={!consentChecked || !isHardwareReady || submitting || isBlockedBySchedule}
-            className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-brand-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+            className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-brand-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2 cursor-pointer"
           >
             <span>
               {isExpired
@@ -779,11 +860,23 @@ export const ExamSession: React.FC = () => {
                 ? 'Exam Not Open Yet'
                 : submitting
                 ? 'Initiating Exam Session...'
-                : !isHardwareReady
-                ? 'Please Enable Camera, Mic & Screen Share Above'
+                : !isCameraActive
+                ? '1. Please Enable Face Camera'
+                : !isFaceDetected
+                ? (faceStatus === 'camera_covered'
+                    ? 'Camera Feed Covered / Black — Uncover Camera to Proceed'
+                    : faceStatus === 'multiple_faces'
+                    ? 'Multiple People Detected — Only 1 Candidate Permitted'
+                    : 'Face Not Detected — Look into Camera to Proceed')
+                : !isMicActive
+                ? '2. Please Enable Microphone'
+                : !isScreenSharing
+                ? '3. Please Share Your Screen'
+                : !consentChecked
+                ? 'Please Acknowledge Guidelines Above'
                 : 'Enter Assessment Session'}
             </span>
-            {!isBlockedBySchedule && <ArrowRight className="w-4 h-4" />}
+            {!isBlockedBySchedule && isHardwareReady && consentChecked && <ArrowRight className="w-4 h-4" />}
           </button>
         </div>
       </div>

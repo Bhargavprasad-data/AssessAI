@@ -14,6 +14,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const [isSimulatedHardware, setIsSimulatedHardware] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
@@ -222,6 +223,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
   // 5. Simulated Hardware Fallback (For devices without physical webcam/mic or dev testing)
   const enableSimulatedHardware = useCallback(() => {
     setMediaError(null);
+    setIsSimulatedHardware(true);
 
     // Stop any existing simulated intervals
     if (simIntervalRef.current) {
@@ -392,6 +394,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     setIsCameraActive(false);
     setIsMicActive(false);
     setIsScreenSharing(false);
+    setIsSimulatedHardware(false);
     setAudioLevel(0);
   }, []);
 
@@ -409,6 +412,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     isCameraActive,
     isMicActive,
     isScreenSharing,
+    isSimulatedHardware,
     audioLevel,
     mediaError,
     requestCamera,
