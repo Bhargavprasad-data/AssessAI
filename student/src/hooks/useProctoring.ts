@@ -17,6 +17,9 @@ interface UseProctoringOptions {
 
 export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctoringOptions) => {
   const [activeWarning, setActiveWarning] = useState<ProctoringWarning | null>(null);
+  const activeWarningRef = useRef<ProctoringWarning | null>(null);
+  activeWarningRef.current = activeWarning;
+
   const lastReportedTimeRef = useRef<{ [key: string]: number }>({});
   const lastCountRef = useRef<number>(0);
   const lastMaxRef = useRef<number>(3);
@@ -24,10 +27,16 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
   const reportViolation = useCallback(async (type: string, metadata: Record<string, any> = {}) => {
     if (!isActive || !attemptId) return;
 
+    // Do NOT accumulate strikes while a warning modal is actively displayed to the user!
+    // The candidate is currently reading the warning and must acknowledge / resolve it first.
+    if (activeWarningRef.current) {
+      return;
+    }
+
     const now = Date.now();
     const lastTime = lastReportedTimeRef.current[type] || 0;
-    // 2-second client-side debounce filter
-    if (now - lastTime < 2000) {
+    // 12-second client-side debounce filter to allow student time to react and correct behavior
+    if (now - lastTime < 12000) {
       return;
     }
     lastReportedTimeRef.current[type] = now;
@@ -47,8 +56,8 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
         speechMsg = 'Warning: Unauthorized material detected. Please remove it and write your exam.';
       }
     } else if (type === 'multiple_faces') {
-      defaultMsg = `Security Alert: Multiple persons detected (${metadata?.count || 'multiple'} faces in view). Exam session stopped.`;
-      speechMsg = 'Warning: Multiple faces detected. The exam session has been stopped.';
+      defaultMsg = `Warning: Multiple persons detected (${metadata?.count || 'multiple'} faces in view). Please ensure only the registered candidate is facing the camera.`;
+      speechMsg = 'Warning: Multiple faces detected. Please ensure only the registered candidate is facing the camera.';
     } else if (type === 'no_face') {
       defaultMsg = 'Warning: Face not visible in camera. Please look at the camera to write your exam.';
       speechMsg = 'Warning: Face not visible to camera. Please face the screen.';
@@ -186,7 +195,15 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
     };
   }, [isActive, reportViolation]);
 
-  const dismissWarning = () => setActiveWarning(null);
+  const dismissWarning = useCallback(() => {
+    // When returning to exam, apply a 10-second grace period for all violation types
+    // so the student can resume without an immediate instant re-trigger
+    const resumeGrace = Date.now() + 10000;
+    Object.keys(lastReportedTimeRef.current).forEach((key) => {
+      lastReportedTimeRef.current[key] = Math.max(lastReportedTimeRef.current[key] || 0, resumeGrace);
+    });
+    setActiveWarning(null);
+  }, []);
 
   return { activeWarning, dismissWarning, reportViolation };
 };

@@ -1554,6 +1554,18 @@ export const ExamSession: React.FC = () => {
             </div>
           )}
 
+          {activeWarning?.type === 'multiple_faces' && (
+            <div className="mb-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-left text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
+              <p className="font-bold flex items-center space-x-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Multiple Persons Detected:</span>
+              </p>
+              <p className="text-[11px] leading-relaxed">
+                More than one person is visible to the camera. Only the registered candidate is permitted to take the exam. Please ensure all other persons step out of camera view before continuing.
+              </p>
+            </div>
+          )}
+
           {activeWarning?.type === 'unauthorized_object' && (activeWarning?.message.toLowerCase().includes('mismatch') || activeWarning?.message.toLowerCase().includes('candidate face')) && (
             <div className="mb-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-left text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
               <p className="font-bold flex items-center space-x-1.5">

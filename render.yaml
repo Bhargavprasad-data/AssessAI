@@ -23,7 +23,7 @@ services:
       - key: DEFAULT_MAX_VIOLATIONS
         value: "3"
       - key: VIOLATION_DEBOUNCE_SECONDS
-        value: "2.0"
+        value: "10.0"
       - key: AI_PROVIDER_ORDER
         value: "gemini,anthropic,openai,ollama,mock"
       - key: MOCK_AI_ENABLED

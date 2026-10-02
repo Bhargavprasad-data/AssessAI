@@ -358,8 +358,8 @@ export function useCameraDetection({
   const triggerViolation = useCallback((type: string, metadata: Record<string, any>, spokenText?: string) => {
     const now = Date.now();
     const lastTime = lastViolationTimeRef.current[type] || 0;
-    // 6-second safety cooldown between repeated strikes of the same violation type
-    if (now - lastTime < 6000) {
+    // 12-second safety cooldown between repeated strikes of the same violation type
+    if (now - lastTime < 12000) {
       return;
     }
     lastViolationTimeRef.current[type] = now;
@@ -464,16 +464,18 @@ export function useCameraDetection({
                   multipleFacesConsecutiveFramesRef.current += 1;
                   facePresentConsecutiveRef.current = 0;
 
-                  // 2 consecutive frames confirms multiple people in frame
-                  if (multipleFacesConsecutiveFramesRef.current >= 2) {
+                  // 5 consecutive frames (~600ms) confirms multiple people in frame
+                  if (multipleFacesConsecutiveFramesRef.current >= 5) {
                     setFaceStatus('multiple_faces');
                     setIsFaceDetected(false);
                     setIsFaceMismatch(false);
 
                     if (isActive) {
-                      // STOP EXAM IMMEDIATELY when multiple faces are detected
-                      if (!multipleFacesIncidentActiveRef.current) {
+                      const now = Date.now();
+                      const lastMultipleFacesTime = lastViolationTimeRef.current['multiple_faces'] || 0;
+                      if (!multipleFacesIncidentActiveRef.current && now - lastMultipleFacesTime >= 12000) {
                         multipleFacesIncidentActiveRef.current = true;
+                        lastViolationTimeRef.current['multiple_faces'] = now;
                         onMultipleFacesDetected?.(detectedFaceCount);
                       }
                     }
@@ -554,7 +556,7 @@ export function useCameraDetection({
 
                           const now = Date.now();
                           const lastMismatchTime = lastViolationTimeRef.current['face_mismatch'] || 0;
-                          if (!faceMismatchIncidentActiveRef.current || now - lastMismatchTime > 8000) {
+                          if (!faceMismatchIncidentActiveRef.current && now - lastMismatchTime >= 12000) {
                             faceMismatchIncidentActiveRef.current = true;
                             lastViolationTimeRef.current['face_mismatch'] = now;
                             onFaceMismatch?.(similarityPercent);
