@@ -139,8 +139,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     checkAuth();
+
+    const handleAuthExpired = () => {
+      if (isMounted) {
+        setUser(null);
+        localStorage.removeItem('cached_user');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
+        setLoading(false);
+      }
+    };
+    window.addEventListener('auth:expired', handleAuthExpired);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('auth:expired', handleAuthExpired);
     };
   }, []);
 

@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
   Layers,
-  ShieldCheck,
   LogOut,
   Sun,
   Moon,
@@ -23,9 +22,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'User Management', path: '/admin/users',       icon: Users        },
-  { label: 'Test Management', path: '/admin/assessments', icon: Layers       },
-  { label: 'Audit Logs',      path: '/admin/audit-logs',  icon: ShieldCheck  },
+  { label: 'User Management', path: '/admin/users',       icon: Users  },
+  { label: 'Test Management', path: '/admin/assessments', icon: Layers },
 ];
 
 /* ─────────────────────────────────────────────────────────────────

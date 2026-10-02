@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ThemeToggle } from './ThemeToggle';
-import { LogOut, User as UserIcon, Users, ShieldCheck } from 'lucide-react';
+import { LogOut, User as UserIcon, Users, Layers } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
@@ -48,15 +48,15 @@ export const Navbar: React.FC = () => {
               <span>User Management</span>
             </Link>
             <Link
-              to="/admin/audit-logs"
+              to="/admin/assessments"
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5 ${
-                isActive('/admin/audit-logs')
+                isActive('/admin/assessments')
                   ? 'dark:bg-white/10 bg-brand-500/15 dark:text-white text-brand-700 shadow-sm'
                   : 'dark:text-slate-400 text-slate-600 dark:hover:text-white hover:text-slate-900 dark:hover:bg-white/5 hover:bg-slate-100'
               }`}
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Audit Logs</span>
+              <Layers className="w-4 h-4" />
+              <span>Test Management</span>
             </Link>
           </nav>
         </div>

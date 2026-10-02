@@ -7,13 +7,24 @@ import { Sidebar } from './components/common/Sidebar';
 import { Login } from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import AssessmentManager from './pages/AssessmentManager';
-import AuditLogViewer from './pages/AuditLogViewer';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 1,
+      retry: (failureCount, error: any) => {
+        const msg = String(error?.message || '');
+        if (
+          msg.includes('401') ||
+          msg.includes('status 401') ||
+          msg.includes('403') ||
+          msg.includes('Forbidden') ||
+          msg.includes('Unauthorized')
+        ) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });
@@ -91,13 +102,7 @@ export default function App() {
               />
               <Route
                 path="/admin/audit-logs"
-                element={
-                  <AdminRoute>
-                    <AdminShell>
-                      <AuditLogViewer />
-                    </AdminShell>
-                  </AdminRoute>
-                }
+                element={<Navigate to="/admin/users" replace />}
               />
               <Route
                 path="/admin"

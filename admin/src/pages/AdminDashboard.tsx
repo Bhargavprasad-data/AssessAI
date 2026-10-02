@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  UserPlus, AlertOctagon, Search, FileText, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers
+  UserPlus, AlertOctagon, Search, Ban, CheckCircle2, Pencil, Trash2, AlertTriangle, Eye, EyeOff, Layers
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 import type { User, UserRole } from '../types';
@@ -261,17 +261,6 @@ export default function AdminDashboard() {
             Test Management
           </Link>
 
-          <Link
-            to="/admin/audit-logs"
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors
-              border border-slate-300 dark:border-slate-700
-              bg-white dark:bg-slate-800/80
-              text-slate-700 dark:text-slate-300
-              hover:bg-slate-100 dark:hover:bg-slate-700"
-          >
-            <FileText className="w-4 h-4 text-brand-500" />
-            Audit Logs
-          </Link>
 
           <button
             onClick={() => setIsCreateAdminOpen(true)}

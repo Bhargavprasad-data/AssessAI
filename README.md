@@ -220,7 +220,7 @@ Smart-Proctoring-System/
 │   │   └── pages/            # AssessmentBuilder, AssessmentAnalytics, TeacherDashboard
 ├── admin/                    # Admin Portal (React + Vite + TypeScript)
 │   ├── src/
-│   │   └── pages/            # AdminDashboard, AuditLogViewer, Login
+│   │   └── pages/            # AdminDashboard, AssessmentManager, Login
 ├── docker-compose.yml        # Multi-container Docker Configuration
 ├── render.yaml               # Render Infrastructure-as-Code Blueprint
 ├── DEPLOYMENT.md             # Complete Deployment Guide
