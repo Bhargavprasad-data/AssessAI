@@ -15,6 +15,9 @@ interface ProctoringMediaWidgetProps {
   detectedItems?: DetectedItem[];
   mobileWarningActive?: boolean;
   modelLoaded?: boolean;
+  personCount?: number;
+  isFaceMismatch?: boolean;
+  faceMatchScore?: number;
 }
 
 // Animated VU meter bars
@@ -62,6 +65,9 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
   detectedItems = [],
   mobileWarningActive = false,
   modelLoaded = false,
+  personCount = 0,
+  isFaceMismatch = false,
+  faceMatchScore = 100,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
@@ -152,7 +158,13 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             }`} />
           </span>
           <span className="text-xs font-bold text-slate-200">
-            {mobileWarningActive ? '⚠️ Mobile Detected!' : 'Proctor Active'}
+            {personCount > 1
+              ? '⚠️ Multiple Faces!'
+              : isFaceMismatch
+              ? '⚠️ Face Mismatch!'
+              : mobileWarningActive
+              ? '⚠️ Mobile Detected!'
+              : 'Proctor Active'}
           </span>
 
           <div className="flex items-center space-x-1 border-l border-slate-700 pl-2.5">
@@ -177,7 +189,7 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
         /* ── Full Widget Card ── */
         <div
           className={`w-72 rounded-2xl border ${
-            mobileWarningActive ? 'border-rose-500 ring-2 ring-rose-500/50' : 'border-slate-700/80'
+            personCount > 1 || isFaceMismatch || mobileWarningActive ? 'border-rose-500 ring-2 ring-rose-500/50' : 'border-slate-700/80'
           } bg-slate-900/98 shadow-2xl overflow-hidden backdrop-blur-xl transition-colors duration-200`}
           style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)' }}
         >
@@ -185,18 +197,18 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
           <div
             onMouseDown={onMouseDown}
             className={`px-3.5 py-2.5 bg-gradient-to-r ${
-              mobileWarningActive ? 'from-rose-900 to-rose-950' : 'from-slate-800 to-slate-800/60'
+              personCount > 1 || isFaceMismatch || mobileWarningActive ? 'from-rose-900 to-rose-950' : 'from-slate-800 to-slate-800/60'
             } border-b border-slate-700/80 flex items-center justify-between cursor-grab active:cursor-grabbing`}
           >
             <div className="flex items-center space-x-2">
-              <ShieldCheck className={`w-4 h-4 ${mobileWarningActive ? 'text-rose-400' : 'text-brand-400'}`} />
+              <ShieldCheck className={`w-4 h-4 ${personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : 'text-brand-400'}`} />
               <span className="text-xs font-bold text-white tracking-wide">Smart Proctor Feed</span>
               <span className="relative flex h-1.5 w-1.5 ml-1">
                 <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  mobileWarningActive ? 'bg-rose-400' : allOk ? 'bg-emerald-400' : 'bg-amber-400'
+                  personCount > 1 || isFaceMismatch || mobileWarningActive ? 'bg-rose-400' : allOk ? 'bg-emerald-400' : 'bg-amber-400'
                 }`} />
                 <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                  mobileWarningActive ? 'bg-rose-500' : allOk ? 'bg-emerald-500' : 'bg-amber-500'
+                  personCount > 1 || isFaceMismatch || mobileWarningActive ? 'bg-rose-500' : allOk ? 'bg-emerald-500' : 'bg-amber-500'
                 }`} />
               </span>
             </div>
@@ -231,8 +243,38 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
               </div>
             )}
 
+            {/* Multiple Faces Detected Overlay Banner */}
+            {personCount > 1 && (
+              <div className="absolute inset-0 bg-rose-950/85 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center border-2 border-rose-500 animate-pulse z-20">
+                <div className="w-9 h-9 rounded-full bg-rose-500/30 border border-rose-400 flex items-center justify-center mb-1.5 shadow-lg shadow-rose-500/50">
+                  <AlertCircle className="w-5 h-5 text-rose-300 animate-bounce" />
+                </div>
+                <span className="text-xs font-black text-white tracking-wide uppercase">
+                  Multiple Faces Detected! ({personCount})
+                </span>
+                <span className="text-[10px] text-rose-200 mt-0.5 leading-tight font-medium">
+                  Exam session halted. Only 1 candidate permitted.
+                </span>
+              </div>
+            )}
+
+            {/* Candidate Identity Face Mismatch Overlay Banner */}
+            {isFaceMismatch && personCount <= 1 && (
+              <div className="absolute inset-0 bg-amber-950/85 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center border-2 border-amber-500 animate-pulse z-20">
+                <div className="w-9 h-9 rounded-full bg-amber-500/30 border border-amber-400 flex items-center justify-center mb-1.5 shadow-lg shadow-amber-500/50">
+                  <AlertCircle className="w-5 h-5 text-amber-300 animate-bounce" />
+                </div>
+                <span className="text-xs font-black text-white tracking-wide uppercase">
+                  Face Mismatch Detected!
+                </span>
+                <span className="text-[10px] text-amber-200 mt-0.5 leading-tight font-medium">
+                  Match: {faceMatchScore}%. Registered candidate must face camera.
+                </span>
+              </div>
+            )}
+
             {/* AI Object Guard Warning Banner Overlay on Mobile Detection */}
-            {(mobileWarningActive || hasPhone) && (
+            {(mobileWarningActive || hasPhone) && personCount <= 1 && !isFaceMismatch && (
               <div className="absolute inset-0 bg-rose-950/75 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center border-2 border-rose-500 animate-pulse z-10">
                 <div className="w-9 h-9 rounded-full bg-rose-500/30 border border-rose-400 flex items-center justify-center mb-1.5 shadow-lg shadow-rose-500/50">
                   <Smartphone className="w-5 h-5 text-rose-300 animate-bounce" />
@@ -258,11 +300,11 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             {/* AI Guard status tag */}
             <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-slate-900/85 backdrop-blur border border-white/10 text-[9px] font-semibold text-brand-300 flex items-center space-x-1">
               <Sparkles className="w-2.5 h-2.5 text-brand-400" />
-              <span>{modelLoaded ? 'AI Object Guard Active' : 'AI Guard Initializing'}</span>
+              <span>{modelLoaded ? 'AI Guard Active' : 'AI Initializing'}</span>
             </div>
 
             {/* Offline warning strip */}
-            {anyOffline && !mobileWarningActive && (
+            {anyOffline && !mobileWarningActive && personCount <= 1 && !isFaceMismatch && (
               <div className="absolute bottom-0 inset-x-0 py-1.5 bg-rose-950/80 backdrop-blur border-t border-rose-500/30 flex items-center justify-center space-x-1.5">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
                 <span className="text-[10px] font-bold text-rose-300">Device offline — violation recorded</span>
@@ -272,6 +314,33 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
 
           {/* Indicators Panel */}
           <div className="p-3 bg-slate-900 space-y-2.5">
+            {/* AI Face Biometric Identity Guard */}
+            <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between text-[11px]">
+              <div className="flex items-center space-x-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
+                <span className="font-semibold text-slate-300">Candidate Identity</span>
+              </div>
+              <div>
+                {personCount > 1 ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                    {personCount} FACES (HALT)
+                  </span>
+                ) : isFaceMismatch ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                    MISMATCH ({faceMatchScore}%)
+                  </span>
+                ) : isCameraActive ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    VERIFIED (MATCH)
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
+                    OFFLINE
+                  </span>
+                )}
+              </div>
+            </div>
+
             {/* AI Vision Object Detection Status */}
             <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between text-[11px]">
               <div className="flex items-center space-x-1.5">
@@ -348,12 +417,24 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
 
           {/* Footer status bar */}
           <div className={`px-3.5 py-2 flex items-center justify-between border-t border-slate-800 ${
-            mobileWarningActive ? 'bg-rose-950/60' : allOk ? 'bg-emerald-950/40' : 'bg-rose-950/40'
+            personCount > 1 || isFaceMismatch || mobileWarningActive ? 'bg-rose-950/60' : allOk ? 'bg-emerald-950/40' : 'bg-rose-950/40'
           }`}>
             <div className="flex items-center space-x-1.5">
-              <ShieldCheck className={`w-3.5 h-3.5 ${mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'}`} />
-              <span className={`text-[10px] font-bold tracking-wide ${mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {mobileWarningActive ? 'UNAUTHORIZED OBJECT DETECTED' : allOk ? 'ALL SYSTEMS NOMINAL' : 'DEVICE OFFLINE — LOGGED'}
+              <ShieldCheck className={`w-3.5 h-3.5 ${
+                personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'
+              }`} />
+              <span className={`text-[10px] font-bold tracking-wide ${
+                personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'
+              }`}>
+                {personCount > 1
+                  ? `SECURITY HALT: ${personCount} FACES DETECTED`
+                  : isFaceMismatch
+                  ? `IDENTITY WARNING: FACE MISMATCH (${faceMatchScore}%)`
+                  : mobileWarningActive
+                  ? 'UNAUTHORIZED OBJECT DETECTED'
+                  : allOk
+                  ? 'ALL SYSTEMS NOMINAL'
+                  : 'DEVICE OFFLINE — LOGGED'}
               </span>
             </div>
           </div>

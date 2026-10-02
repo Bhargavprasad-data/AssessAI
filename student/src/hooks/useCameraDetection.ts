@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import * as blazeface from '@tensorflow-models/blazeface';
 import { speakWarning } from '../utils/audioWarning';
 
 export interface DetectedItem {
@@ -16,7 +17,19 @@ export type FaceVerificationStatus =
   | 'face_detected'
   | 'no_face'
   | 'multiple_faces'
+  | 'face_mismatch'
   | 'camera_covered';
+
+export interface CandidateFaceProfile {
+  eyeDistRatio: number;
+  eyeToNoseRatio: number;
+  noseToMouthRatio: number;
+  eyeToMouthRatio: number;
+  symmetryRatio: number;
+  triangleRatio: number;
+  appearanceVector: number[];
+  sampleCount: number;
+}
 
 export interface UseCameraDetectionOptions {
   cameraStream: MediaStream | null;
@@ -24,7 +37,175 @@ export interface UseCameraDetectionOptions {
   isActive: boolean;
   isSimulatedHardware?: boolean;
   onViolation?: (type: string, metadata?: Record<string, any>) => void;
+  onMultipleFacesDetected?: (count: number) => void;
+  onFaceMismatch?: (matchScore: number) => void;
 }
+
+// Helpers for Biometric Geometry & Appearance Matching
+function dist(p1: [number, number], p2: [number, number]): number {
+  const dx = p1[0] - p2[0];
+  const dy = p1[1] - p2[1];
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function triangleArea(p1: [number, number], p2: [number, number], p3: [number, number]): number {
+  return 0.5 * Math.abs(p1[0] * (p2[1] - p3[1]) + p2[0] * (p3[1] - p1[1]) + p3[0] * (p1[1] - p2[1]));
+}
+
+function getCoord(pt: any): [number, number] {
+  if (Array.isArray(pt)) {
+    return [Number(pt[0]) || 0, Number(pt[1]) || 0];
+  }
+  if (pt && typeof pt.dataSync === 'function') {
+    try {
+      const data = pt.dataSync();
+      return [Number(data[0]) || 0, Number(data[1]) || 0];
+    } catch {}
+  }
+  return [0, 0];
+}
+
+function extractAppearanceVector(
+  video: HTMLVideoElement,
+  topLeft: [number, number],
+  bottomRight: [number, number],
+  canvas: HTMLCanvasElement
+): number[] {
+  const fw = Math.max(20, bottomRight[0] - topLeft[0]);
+  const fh = Math.max(20, bottomRight[1] - topLeft[1]);
+  const sx = Math.max(0, topLeft[0]);
+  const sy = Math.max(0, topLeft[1]);
+  const sw = Math.min(video.videoWidth - sx, fw);
+  const sh = Math.min(video.videoHeight - sy, fh);
+
+  canvas.width = 24;
+  canvas.height = 24;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || sw <= 0 || sh <= 0) return new Array(48).fill(0);
+
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, 24, 24);
+  const imgData = ctx.getImageData(0, 0, 24, 24);
+  const data = imgData.data;
+
+  // 12 spatial patches (3 columns x 4 rows), each patch has 4 channels [R, G, B, Lum] = 48 values
+  const vector: number[] = [];
+  const patchW = 8;
+  const patchH = 6;
+
+  for (let pr = 0; pr < 4; pr++) {
+    for (let pc = 0; pc < 3; pc++) {
+      let rSum = 0, gSum = 0, bSum = 0;
+      let count = 0;
+      for (let y = pr * patchH; y < (pr + 1) * patchH; y++) {
+        for (let x = pc * patchW; x < (pc + 1) * patchW; x++) {
+          const idx = (y * 24 + x) * 4;
+          rSum += data[idx];
+          gSum += data[idx + 1];
+          bSum += data[idx + 2];
+          count++;
+        }
+      }
+      const r = (rSum / Math.max(1, count)) / 255;
+      const g = (gSum / Math.max(1, count)) / 255;
+      const b = (bSum / Math.max(1, count)) / 255;
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      vector.push(r, g, b, lum);
+    }
+  }
+
+  // Normalize vector to unit length
+  const norm = Math.sqrt(vector.reduce((acc, v) => acc + v * v, 0)) || 1;
+  return vector.map((v) => v / norm);
+}
+
+function extractFaceProfile(
+  video: HTMLVideoElement,
+  face: any,
+  canvas: HTMLCanvasElement
+): CandidateFaceProfile | null {
+  const tl = getCoord(face.topLeft);
+  const br = getCoord(face.bottomRight);
+  const landmarks = Array.isArray(face.landmarks) ? face.landmarks.map(getCoord) : [];
+
+  const fw = Math.max(25, br[0] - tl[0]);
+  const fh = Math.max(25, br[1] - tl[1]);
+
+  if (landmarks.length < 4) return null;
+
+  const rightEye = landmarks[0];
+  const leftEye = landmarks[1];
+  const nose = landmarks[2];
+  const mouth = landmarks[3];
+
+  const eyeDist = Math.max(8, dist(leftEye, rightEye));
+  const eyeMidpoint: [number, number] = [(leftEye[0] + rightEye[0]) / 2, (leftEye[1] + rightEye[1]) / 2];
+
+  const eyeDistRatio = eyeDist / fw;
+  const eyeToNoseRatio = dist(eyeMidpoint, nose) / eyeDist;
+  const noseToMouthRatio = dist(nose, mouth) / eyeDist;
+  const eyeToMouthRatio = dist(eyeMidpoint, mouth) / eyeDist;
+  const symmetryRatio = dist(leftEye, nose) / Math.max(1, dist(rightEye, nose));
+  const triangleRatio = triangleArea(leftEye, rightEye, mouth) / (fw * fh);
+
+  const appearanceVector = extractAppearanceVector(video, tl, br, canvas);
+
+  return {
+    eyeDistRatio,
+    eyeToNoseRatio,
+    noseToMouthRatio,
+    eyeToMouthRatio,
+    symmetryRatio,
+    triangleRatio,
+    appearanceVector,
+    sampleCount: 1,
+  };
+}
+
+function mergeProfiles(prev: CandidateFaceProfile, next: CandidateFaceProfile): CandidateFaceProfile {
+  const count = prev.sampleCount + 1;
+  const alpha = 1 / Math.min(count, 10);
+  const beta = 1 - alpha;
+
+  const mergedAppearance = prev.appearanceVector.map((v, i) => v * beta + (next.appearanceVector[i] || 0) * alpha);
+  const norm = Math.sqrt(mergedAppearance.reduce((acc, v) => acc + v * v, 0)) || 1;
+
+  return {
+    eyeDistRatio: prev.eyeDistRatio * beta + next.eyeDistRatio * alpha,
+    eyeToNoseRatio: prev.eyeToNoseRatio * beta + next.eyeToNoseRatio * alpha,
+    noseToMouthRatio: prev.noseToMouthRatio * beta + next.noseToMouthRatio * alpha,
+    eyeToMouthRatio: prev.eyeToMouthRatio * beta + next.eyeToMouthRatio * alpha,
+    symmetryRatio: prev.symmetryRatio * beta + next.symmetryRatio * alpha,
+    triangleRatio: prev.triangleRatio * beta + next.triangleRatio * alpha,
+    appearanceVector: mergedAppearance.map((v) => v / norm),
+    sampleCount: count,
+  };
+}
+
+function computeFaceSimilarity(current: CandidateFaceProfile, baseline: CandidateFaceProfile): number {
+  // 1. Geometric Landmark Ratios Distance
+  const eyeToNoseDiff = Math.abs(current.eyeToNoseRatio - baseline.eyeToNoseRatio) / Math.max(0.1, baseline.eyeToNoseRatio);
+  const noseToMouthDiff = Math.abs(current.noseToMouthRatio - baseline.noseToMouthRatio) / Math.max(0.1, baseline.noseToMouthRatio);
+  const eyeToMouthDiff = Math.abs(current.eyeToMouthRatio - baseline.eyeToMouthRatio) / Math.max(0.1, baseline.eyeToMouthRatio);
+  const eyeDistDiff = Math.abs(current.eyeDistRatio - baseline.eyeDistRatio) / Math.max(0.1, baseline.eyeDistRatio);
+  const symmetryDiff = Math.abs(current.symmetryRatio - baseline.symmetryRatio);
+  const triangleDiff = Math.abs(current.triangleRatio - baseline.triangleRatio) / Math.max(0.01, baseline.triangleRatio);
+
+  const avgGeoDiff = (eyeToNoseDiff * 1.5 + noseToMouthDiff * 1.5 + eyeToMouthDiff * 1.5 + eyeDistDiff + symmetryDiff + triangleDiff) / 7.5;
+  const geoSimilarity = Math.max(0, 1 - avgGeoDiff * 1.8);
+
+  // 2. Cosine Similarity of Appearance Vectors
+  let dot = 0;
+  for (let i = 0; i < current.appearanceVector.length; i++) {
+    dot += current.appearanceVector[i] * baseline.appearanceVector[i];
+  }
+  const appSimilarity = Math.max(0, Math.min(1, dot));
+
+  // Combined score (55% geometry, 45% appearance)
+  const combined = geoSimilarity * 0.55 + appSimilarity * 0.45;
+  return Math.max(0, Math.min(1, combined));
+}
+
+const CANDIDATE_STORAGE_KEY = 'assessai_registered_candidate_profile';
 
 export function useCameraDetection({
   cameraStream,
@@ -32,35 +213,43 @@ export function useCameraDetection({
   isActive,
   isSimulatedHardware = false,
   onViolation,
+  onMultipleFacesDetected,
+  onFaceMismatch,
 }: UseCameraDetectionOptions) {
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
   const [mobileWarningActive, setMobileWarningActive] = useState<boolean>(false);
 
-  // Face Verification State
+  // Face Verification & Recognition State
   const [faceStatus, setFaceStatus] = useState<FaceVerificationStatus>('no_camera');
   const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
-  const [isCameraCovered, setIsCameraCovered] = useState<boolean>(false);
+  const [isFaceMismatch, setIsFaceMismatch] = useState<boolean>(false);
+  const [faceMatchScore, setFaceMatchScore] = useState<number>(100);
   const [personCount, setPersonCount] = useState<number>(0);
+  const [isBaselineRegistered, setIsBaselineRegistered] = useState<boolean>(false);
 
-  const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
+  const blazefaceModelRef = useRef<blazeface.BlazeFaceModel | null>(null);
+  const cocoModelRef = useRef<cocoSsd.ObjectDetection | null>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const lastInferenceTimeRef = useRef<number>(0);
   const isDetectingRef = useRef<boolean>(false);
   const lastViolationTimeRef = useRef<{ [key: string]: number }>({});
-  const faceDetectorRef = useRef<any>(null);
+
+  // Registered Candidate Baseline Face Profile
+  const candidateBaselineRef = useRef<CandidateFaceProfile | null>(null);
 
   // Consecutive counters for stability
   const coveredConsecutiveFramesRef = useRef<number>(0);
   const facePresentConsecutiveRef = useRef<number>(0);
   const noFaceConsecutiveFramesRef = useRef<number>(0);
   const multipleFacesConsecutiveFramesRef = useRef<number>(0);
-  const multipleFacesNormalConsecutiveRef = useRef<number>(0);
+  const faceMismatchConsecutiveRef = useRef<number>(0);
+  const faceMatchNormalConsecutiveRef = useRef<number>(0);
 
-  // Incident State Machine Refs for exam violations
+  // Incident state machine refs for violations
   const phoneIncidentActiveRef = useRef<boolean>(false);
   const phoneConsecutiveFramesRef = useRef<number>(0);
   const phoneAbsentConsecutiveRef = useRef<number>(0);
@@ -71,37 +260,48 @@ export function useCameraDetection({
 
   const multipleFacesIncidentActiveRef = useRef<boolean>(false);
   const noFaceIncidentActiveRef = useRef<boolean>(false);
+  const faceMismatchIncidentActiveRef = useRef<boolean>(false);
 
   const lookingAwayIncidentActiveRef = useRef<boolean>(false);
   const lookingAwayConsecutiveFramesRef = useRef<number>(0);
   const lookingNormalConsecutiveRef = useRef<number>(0);
+  const cocoFrameCounterRef = useRef<number>(0);
 
-  // 1. Initialize TensorFlow.js backend & Load COCO-SSD Model
+  // Restore saved candidate face baseline from session if student reloaded
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(CANDIDATE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.appearanceVector && parsed.eyeToNoseRatio) {
+          candidateBaselineRef.current = parsed;
+          setIsBaselineRegistered(true);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // 1. Initialize TensorFlow.js backend & Load BlazeFace + COCO-SSD Models in parallel
   useEffect(() => {
     let isMounted = true;
 
-    async function loadModel() {
-      if (modelRef.current || isModelLoading) return;
+    async function loadModels() {
+      if (blazefaceModelRef.current || isModelLoading) return;
       setIsModelLoading(true);
       try {
         await tf.ready();
-        let loadedModel: cocoSsd.ObjectDetection | null = null;
-        try {
-          loadedModel = await cocoSsd.load({ base: 'mobilenet_v2' });
-        } catch {
-          try {
-            loadedModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-          } catch {
-            loadedModel = await cocoSsd.load();
-          }
-        }
+        const [loadedBlazeFace, loadedCoco] = await Promise.all([
+          blazeface.load({ maxFaces: 10, scoreThreshold: 0.50 }),
+          cocoSsd.load({ base: 'mobilenet_v2' }).catch(() => cocoSsd.load()),
+        ]);
 
-        if (isMounted && loadedModel) {
-          modelRef.current = loadedModel;
+        if (isMounted) {
+          blazefaceModelRef.current = loadedBlazeFace;
+          cocoModelRef.current = loadedCoco;
           setModelLoaded(true);
         }
       } catch (err) {
-        console.warn('Failed to load COCO-SSD object detection model:', err);
+        console.warn('Failed to load face detection & proctoring AI models:', err);
       } finally {
         if (isMounted) {
           setIsModelLoading(false);
@@ -109,7 +309,7 @@ export function useCameraDetection({
       }
     }
 
-    loadModel();
+    loadModels();
 
     return () => {
       isMounted = false;
@@ -156,7 +356,7 @@ export function useCameraDetection({
     };
   }, [cameraStream, isCameraActive]);
 
-  // 3. Trigger Incident Violation and Speak Warning
+  // 3. Trigger Incident Violation with Audio Alert
   const triggerViolation = useCallback((type: string, metadata: Record<string, any>, spokenText?: string) => {
     const now = Date.now();
     const lastTime = lastViolationTimeRef.current[type] || 0;
@@ -173,7 +373,7 @@ export function useCameraDetection({
     onViolation?.(type, metadata);
   }, [onViolation]);
 
-  // 4. Continuous AI Object & Face Detection Loop (Runs both in setup and exam session)
+  // 4. Dual-Engine Real-Time Face Verification, Multi-Face Detection, and Face Mismatch Tracking
   useEffect(() => {
     if (!isCameraActive || !cameraStream) {
       if (animationFrameRef.current) {
@@ -184,7 +384,7 @@ export function useCameraDetection({
       setMobileWarningActive(false);
       setFaceStatus('no_camera');
       setIsFaceDetected(false);
-      setIsCameraCovered(false);
+      setIsFaceMismatch(false);
       setPersonCount(0);
       return;
     }
@@ -192,7 +392,7 @@ export function useCameraDetection({
     if (isSimulatedHardware) {
       setFaceStatus('face_detected');
       setIsFaceDetected(true);
-      setIsCameraCovered(false);
+      setIsFaceMismatch(false);
       setPersonCount(1);
       return;
     }
@@ -203,7 +403,7 @@ export function useCameraDetection({
       if (!isRunning) return;
 
       const now = Date.now();
-      // Run inference every 120ms for smooth, responsive detection without overloading GPU
+      // Run inference every 120ms
       if (now - lastInferenceTimeRef.current >= 120 && !isDetectingRef.current) {
         const liveVideo =
           (document.getElementById('setup-camera-video') as HTMLVideoElement) ||
@@ -215,41 +415,36 @@ export function useCameraDetection({
           lastInferenceTimeRef.current = now;
 
           try {
-            // 1. Direct luminance check to detect covered / black / obscured camera
+            // Step 1: Luminance check to detect covered / pitch black camera
             let frameIsCovered = false;
             let avgBrightness = 100;
-            try {
-              if (!canvasRef.current) {
-                canvasRef.current = document.createElement('canvas');
+            if (!canvasRef.current) {
+              canvasRef.current = document.createElement('canvas');
+            }
+            const canvas = canvasRef.current;
+            canvas.width = 32;
+            canvas.height = 24;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (ctx) {
+              ctx.drawImage(liveVideo, 0, 0, 32, 24);
+              const imgData = ctx.getImageData(0, 0, 32, 24);
+              const data = imgData.data;
+              let sum = 0;
+              const count = data.length / 4;
+              for (let i = 0; i < data.length; i += 4) {
+                sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
               }
-              const canvas = canvasRef.current;
-              canvas.width = 32;
-              canvas.height = 24;
-              const ctx = canvas.getContext('2d', { willReadFrequently: true });
-              if (ctx) {
-                ctx.drawImage(liveVideo, 0, 0, 32, 24);
-                const imgData = ctx.getImageData(0, 0, 32, 24);
-                const data = imgData.data;
-                let sum = 0;
-                const count = data.length / 4;
-                for (let i = 0; i < data.length; i += 4) {
-                  sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                }
-                avgBrightness = sum / count;
-                // Average luminance < 14 indicates lens is covered, closed, taped, or pitch black
-                frameIsCovered = avgBrightness < 14;
-              }
-            } catch {
-              // canvas draw error fallback
+              avgBrightness = sum / count;
+              frameIsCovered = avgBrightness < 14;
             }
 
             if (frameIsCovered) {
               coveredConsecutiveFramesRef.current += 1;
               facePresentConsecutiveRef.current = 0;
               if (coveredConsecutiveFramesRef.current >= 2) {
-                setIsCameraCovered(true);
                 setFaceStatus('camera_covered');
                 setIsFaceDetected(false);
+                setIsFaceMismatch(false);
                 setPersonCount(0);
                 if (isActive) {
                   triggerViolation(
@@ -261,47 +456,47 @@ export function useCameraDetection({
               }
             } else {
               coveredConsecutiveFramesRef.current = 0;
-              setIsCameraCovered(false);
 
-              // 2. AI Person & Face Detection
-              const model = modelRef.current;
-              if (!model) {
+              const blazeModel = blazefaceModelRef.current;
+              if (!blazeModel) {
                 setFaceStatus('initializing');
                 setIsFaceDetected(false);
               } else {
-                const predictions = await model.detect(liveVideo, 15, 0.30);
-                const validDetections: DetectedItem[] = predictions.map((p) => ({
-                  class: p.class.toLowerCase(),
-                  score: p.score,
-                  bbox: p.bbox,
-                }));
-                setDetectedItems(validDetections);
+                // Step 2: Ultra-accurate BlazeFace Detection (Detects ALL faces directly)
+                const faces = await blazeModel.estimateFaces(liveVideo, false);
+                const detectedFaceCount = faces.length;
+                setPersonCount(detectedFaceCount);
 
-                const w = liveVideo.videoWidth || 640;
-                const h = liveVideo.videoHeight || 480;
+                // ==============================================================
+                // A. MULTIPLE FACES DETECTED (> 1 FACE)
+                // ==============================================================
+                if (detectedFaceCount > 1) {
+                  multipleFacesConsecutiveFramesRef.current += 1;
+                  facePresentConsecutiveRef.current = 0;
 
-                // Candidate / Persons Detection
-                const persons = validDetections.filter((d) => d.class === 'person' && d.score >= 0.45);
-                setPersonCount(persons.length);
+                  // 2 consecutive frames confirms multiple people in frame
+                  if (multipleFacesConsecutiveFramesRef.current >= 2) {
+                    setFaceStatus('multiple_faces');
+                    setIsFaceDetected(false);
+                    setIsFaceMismatch(false);
 
-                // Optional native FaceDetector double check if supported in browser
-                let nativeFaceCount = 0;
-                if (typeof (window as any).FaceDetector !== 'undefined') {
-                  try {
-                    if (!faceDetectorRef.current) {
-                      faceDetectorRef.current = new (window as any).FaceDetector({ fastMode: true, maxDetectedFaces: 5 });
+                    if (isActive) {
+                      // STOP EXAM IMMEDIATELY when multiple faces are detected
+                      if (!multipleFacesIncidentActiveRef.current) {
+                        multipleFacesIncidentActiveRef.current = true;
+                        onMultipleFacesDetected?.(detectedFaceCount);
+                      }
                     }
-                    const faces = await faceDetectorRef.current.detect(liveVideo);
-                    if (faces && Array.isArray(faces)) {
-                      nativeFaceCount = faces.length;
-                    }
-                  } catch {}
+                  }
                 }
 
-                if (persons.length === 0 && nativeFaceCount === 0) {
+                // ==============================================================
+                // B. NO FACE DETECTED (0 FACES)
+                // ==============================================================
+                else if (detectedFaceCount === 0) {
+                  multipleFacesConsecutiveFramesRef.current = 0;
                   facePresentConsecutiveRef.current = 0;
                   noFaceConsecutiveFramesRef.current += 1;
-                  lookingAwayConsecutiveFramesRef.current = 0;
 
                   if (noFaceConsecutiveFramesRef.current >= 2) {
                     setFaceStatus('no_face');
@@ -316,45 +511,91 @@ export function useCameraDetection({
                       'Warning: Face not visible. Please look at the camera to write your exam.'
                     );
                   }
-                } else if (persons.length > 1 || nativeFaceCount > 1) {
-                  facePresentConsecutiveRef.current = 0;
-                  setFaceStatus('multiple_faces');
-                  setIsFaceDetected(false);
+                }
 
-                  if (isActive) {
-                    multipleFacesConsecutiveFramesRef.current += 1;
-                    multipleFacesNormalConsecutiveRef.current = 0;
-                    if (multipleFacesConsecutiveFramesRef.current >= 6 && !multipleFacesIncidentActiveRef.current) {
-                      multipleFacesIncidentActiveRef.current = true;
-                      triggerViolation(
-                        'multiple_faces',
-                        {
-                          count: Math.max(persons.length, nativeFaceCount),
-                          message: `${Math.max(persons.length, nativeFaceCount)} persons detected in camera frame`,
-                        },
-                        'Warning: Multiple persons detected in camera frame.'
-                      );
-                    }
-                  }
-                } else {
-                  // Exactly 1 person/face detected
-                  const candidate = persons[0];
-                  const [, , pw, ph] = candidate ? candidate.bbox : [0, 0, 100, 100];
-                  if (pw > 35 && ph > 35) {
-                    facePresentConsecutiveRef.current += 1;
-                    noFaceConsecutiveFramesRef.current = 0;
-                    if (facePresentConsecutiveRef.current >= 2) {
+                // ==============================================================
+                // C. EXACTLY 1 FACE DETECTED
+                // ==============================================================
+                else {
+                  multipleFacesConsecutiveFramesRef.current = 0;
+                  noFaceConsecutiveFramesRef.current = 0;
+                  facePresentConsecutiveRef.current += 1;
+                  noFaceIncidentActiveRef.current = false;
+                  multipleFacesIncidentActiveRef.current = false;
+
+                  const singleFace = faces[0];
+                  const currentProfile = extractFaceProfile(liveVideo, singleFace, canvas);
+
+                  // 1. If in Pre-Exam Setup Phase: Register candidate baseline profile
+                  if (!isActive) {
+                    if (currentProfile && facePresentConsecutiveRef.current >= 2) {
+                      if (!candidateBaselineRef.current) {
+                        candidateBaselineRef.current = currentProfile;
+                      } else {
+                        candidateBaselineRef.current = mergeProfiles(candidateBaselineRef.current, currentProfile);
+                      }
+                      setIsBaselineRegistered(true);
+                      try {
+                        sessionStorage.setItem(CANDIDATE_STORAGE_KEY, JSON.stringify(candidateBaselineRef.current));
+                      } catch {}
                       setFaceStatus('face_detected');
                       setIsFaceDetected(true);
-                      noFaceIncidentActiveRef.current = false;
+                      setIsFaceMismatch(false);
+                      setFaceMatchScore(100);
                     }
                   }
 
-                  // Looking away check during active exam
-                  if (isActive && candidate) {
-                    const [px, py] = candidate.bbox;
-                    const centerX = (px + pw / 2) / w;
-                    const centerY = (py + ph / 2) / h;
+                  // 2. If in Active Exam Phase: Verify current face against registered candidate baseline
+                  else {
+                    if (currentProfile && candidateBaselineRef.current) {
+                      const similarity = computeFaceSimilarity(currentProfile, candidateBaselineRef.current);
+                      const similarityPercent = Math.round(similarity * 100);
+                      setFaceMatchScore(similarityPercent);
+
+                      // If similarity is below threshold (< 50%), face has changed (different person)
+                      if (similarity < 0.50) {
+                        faceMismatchConsecutiveRef.current += 1;
+                        faceMatchNormalConsecutiveRef.current = 0;
+
+                        // 4 consecutive frames (~500ms) of sustained face mismatch
+                        if (faceMismatchConsecutiveRef.current >= 4) {
+                          setFaceStatus('face_mismatch');
+                          setIsFaceMismatch(true);
+
+                          const now = Date.now();
+                          const lastMismatchTime = lastViolationTimeRef.current['face_mismatch'] || 0;
+                          if (!faceMismatchIncidentActiveRef.current || now - lastMismatchTime > 8000) {
+                            faceMismatchIncidentActiveRef.current = true;
+                            lastViolationTimeRef.current['face_mismatch'] = now;
+                            onFaceMismatch?.(similarityPercent);
+                          }
+                        }
+                      } else {
+                        // Candidate face verified & matches registered baseline
+                        faceMatchNormalConsecutiveRef.current += 1;
+                        faceMismatchConsecutiveRef.current = 0;
+
+                        if (faceMatchNormalConsecutiveRef.current >= 3) {
+                          faceMismatchIncidentActiveRef.current = false;
+                          setIsFaceMismatch(false);
+                          setFaceStatus('face_detected');
+                          setIsFaceDetected(true);
+                        }
+                      }
+                    } else {
+                      // Fallback if no baseline was captured
+                      setFaceStatus('face_detected');
+                      setIsFaceDetected(true);
+                      setIsFaceMismatch(false);
+                    }
+
+                    // Gaze / Looking away tracking from face bounding box
+                    const tl = getCoord(singleFace.topLeft);
+                    const br = getCoord(singleFace.bottomRight);
+                    const w = liveVideo.videoWidth || 640;
+                    const h = liveVideo.videoHeight || 480;
+                    const centerX = (tl[0] + (br[0] - tl[0]) / 2) / w;
+                    const centerY = (tl[1] + (br[1] - tl[1]) / 2) / h;
                     const isLookingAway = centerX < 0.08 || centerX > 0.92 || centerY > 0.92;
 
                     if (isLookingAway) {
@@ -381,15 +622,26 @@ export function useCameraDetection({
                   }
                 }
 
-                // If active exam, also check for cell phones and study materials
-                if (isActive) {
+                // Step 3: Interleaved COCO-SSD Object Detection for Phones and Books (every alternate cycle)
+                cocoFrameCounterRef.current = (cocoFrameCounterRef.current + 1) % 2;
+                const cocoModel = cocoModelRef.current;
+
+                if (isActive && cocoModel && cocoFrameCounterRef.current === 0) {
+                  const predictions = await cocoModel.detect(liveVideo, 10, 0.35);
+                  const validDetections: DetectedItem[] = predictions.map((p) => ({
+                    class: p.class.toLowerCase(),
+                    score: p.score,
+                    bbox: p.bbox,
+                  }));
+                  setDetectedItems(validDetections);
+
                   // A. Mobile phone detection
                   const phoneDetection = validDetections.find((d) => {
                     const c = d.class.toLowerCase();
                     if (c === 'cell phone' || c === 'telephone') {
                       const [, , bw, bh] = d.bbox;
                       const bboxArea = bw * bh;
-                      const totalArea = w * h;
+                      const totalArea = (liveVideo.videoWidth || 640) * (liveVideo.videoHeight || 480);
                       const isPlausibleSize = bboxArea > 400 && bboxArea < (totalArea * 0.85);
                       return d.score >= 0.65 && isPlausibleSize;
                     }
@@ -418,7 +670,7 @@ export function useCameraDetection({
                   } else {
                     phoneConsecutiveFramesRef.current = 0;
                     phoneAbsentConsecutiveRef.current += 1;
-                    if (phoneAbsentConsecutiveRef.current >= 25) {
+                    if (phoneAbsentConsecutiveRef.current >= 20) {
                       phoneIncidentActiveRef.current = false;
                       setMobileWarningActive(false);
                     }
@@ -448,7 +700,7 @@ export function useCameraDetection({
                   } else {
                     bookConsecutiveFramesRef.current = 0;
                     bookAbsentConsecutiveRef.current += 1;
-                    if (bookAbsentConsecutiveRef.current >= 25) {
+                    if (bookAbsentConsecutiveRef.current >= 20) {
                       bookIncidentActiveRef.current = false;
                     }
                   }
@@ -456,7 +708,7 @@ export function useCameraDetection({
               }
             }
           } catch (err) {
-            console.warn('Object detection inference frame error:', err);
+            console.warn('Proctoring inference frame error:', err);
           } finally {
             isDetectingRef.current = false;
           }
@@ -477,7 +729,15 @@ export function useCameraDetection({
         animationFrameRef.current = null;
       }
     };
-  }, [isActive, isCameraActive, cameraStream, isSimulatedHardware, triggerViolation]);
+  }, [
+    isActive,
+    isCameraActive,
+    cameraStream,
+    isSimulatedHardware,
+    triggerViolation,
+    onMultipleFacesDetected,
+    onFaceMismatch,
+  ]);
 
   return {
     modelLoaded,
@@ -486,7 +746,9 @@ export function useCameraDetection({
     mobileWarningActive,
     faceStatus,
     isFaceDetected,
-    isCameraCovered,
+    isFaceMismatch,
+    faceMatchScore,
     personCount,
+    isBaselineRegistered,
   };
 }

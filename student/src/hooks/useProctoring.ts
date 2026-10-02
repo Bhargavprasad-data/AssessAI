@@ -39,11 +39,16 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
       defaultMsg = 'Warning: Mobile phone detected. Close your mobile and please write your exam.';
       speechMsg = 'Warning: Mobile phone detected. Close your mobile and please write your exam.';
     } else if (type === 'unauthorized_object') {
-      defaultMsg = 'Warning: Unauthorized material detected. Please remove it and write your exam.';
-      speechMsg = 'Warning: Unauthorized material detected. Please remove it and write your exam.';
+      if (metadata?.subtype === 'face_mismatch') {
+        defaultMsg = `Warning: Candidate face mismatch detected (${metadata.match_score ? metadata.match_score + '%' : 'mismatch'}). Please ensure the registered candidate is facing the camera.`;
+        speechMsg = 'Warning: Candidate face mismatch detected. Please ensure the registered candidate is facing the camera.';
+      } else {
+        defaultMsg = 'Warning: Unauthorized material detected. Please remove it and write your exam.';
+        speechMsg = 'Warning: Unauthorized material detected. Please remove it and write your exam.';
+      }
     } else if (type === 'multiple_faces') {
-      defaultMsg = 'Warning: Multiple persons detected in camera frame. Only the exam candidate should be present.';
-      speechMsg = 'Warning: Multiple persons detected in camera.';
+      defaultMsg = `Security Alert: Multiple persons detected (${metadata?.count || 'multiple'} faces in view). Exam session stopped.`;
+      speechMsg = 'Warning: Multiple faces detected. The exam session has been stopped.';
     } else if (type === 'no_face') {
       defaultMsg = 'Warning: Face not visible in camera. Please look at the camera to write your exam.';
       speechMsg = 'Warning: Face not visible to camera. Please face the screen.';

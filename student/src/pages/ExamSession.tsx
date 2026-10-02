@@ -10,6 +10,7 @@ import { DifficultyBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { ProctoringMediaWidget } from '../components/common/ProctoringMediaWidget';
 import { cleanQuestionText } from '../utils/textCleaner';
+import { speakWarning } from '../utils/audioWarning';
 import { useAuth } from '../context/AuthContext';
 import {
   ShieldAlert, Clock, AlertTriangle, ArrowRight, EyeOff, Maximize, Minimize,
@@ -31,6 +32,7 @@ export const ExamSession: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [terminatedReason, setTerminatedReason] = useState<string | null>(null);
+  const [faceMismatchActive, setFaceMismatchActive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [submissionSummary, setSubmissionSummary] = useState<{
     total: number;
@@ -120,13 +122,17 @@ export const ExamSession: React.FC = () => {
     },
   });
 
-  // AI Camera Object Detection (Mobile phone, electronic devices, books, multiple faces, gaze tracking)
+  // AI Camera Object Detection & Face Biometric Verification
   const {
     modelLoaded,
     detectedItems,
     mobileWarningActive,
     faceStatus,
     isFaceDetected,
+    isFaceMismatch,
+    faceMatchScore,
+    personCount,
+    isBaselineRegistered,
   } = useCameraDetection({
     cameraStream,
     isCameraActive,
@@ -137,7 +143,44 @@ export const ExamSession: React.FC = () => {
         reportViolation(type, metadata);
       }
     },
+    onMultipleFacesDetected: (count) => {
+      if (!hasConsented || !!terminatedReason || !attemptId) return;
+
+      const haltReason = `Security Violation: Multiple persons detected (${count} faces in camera view). The exam session has been terminated immediately to ensure test integrity.`;
+      setTerminatedReason(haltReason);
+      speakWarning('Warning: Multiple faces detected. The exam session has been stopped.', true);
+      reportViolation('multiple_faces', {
+        count,
+        action: 'exam_halted',
+        reason: `Multiple faces (${count}) detected in camera view during exam`,
+      });
+    },
+    onFaceMismatch: (score) => {
+      if (!hasConsented || !!terminatedReason || !attemptId) return;
+
+      setFaceMismatchActive(true);
+
+      speakWarning(
+        'Warning: Candidate identity mismatch detected. Please ensure the registered candidate is facing the camera.',
+        true
+      );
+      reportViolation('unauthorized_object', {
+        subtype: 'face_mismatch',
+        match_score: score,
+        message: `Candidate face changed during exam (similarity score: ${score}%)`,
+      });
+    },
   });
+
+  // Auto clear temporary mismatch alert state once candidate returns to camera
+  useEffect(() => {
+    if (!isFaceMismatch && faceMismatchActive) {
+      const timer = setTimeout(() => {
+        setFaceMismatchActive(false);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isFaceMismatch, faceMismatchActive]);
 
   const attachSetupVideoRef = useCallback(
     (node: HTMLVideoElement | null) => {
@@ -519,7 +562,12 @@ export const ExamSession: React.FC = () => {
 
   // 1. Consent Screen (Shown before exam starts)
   if (!hasConsented) {
-    const isHardwareReady = isCameraActive && isFaceDetected && isMicActive && isScreenSharing;
+    const isHardwareReady =
+      isCameraActive &&
+      (isFaceDetected || isSimulatedHardware) &&
+      (isBaselineRegistered || isSimulatedHardware) &&
+      isMicActive &&
+      isScreenSharing;
     const isExpired = !!assessmentMeta?.is_expired;
     const isUpcoming = !!assessmentMeta?.is_upcoming;
     const isBlockedBySchedule = isExpired || isUpcoming;
@@ -628,7 +676,7 @@ export const ExamSession: React.FC = () => {
                 type="button"
                 onClick={requestCamera}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                  isFaceDetected && isCameraActive
+                  isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware)
                     ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/40 text-emerald-800 dark:text-emerald-300 shadow-md shadow-emerald-500/10'
                     : isCameraActive
                     ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-300 shadow-md shadow-amber-500/10'
@@ -637,16 +685,16 @@ export const ExamSession: React.FC = () => {
               >
                 <div className="flex items-center justify-between mb-2">
                   <Camera className={`w-5 h-5 ${
-                    isFaceDetected && isCameraActive
+                    isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware)
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : isCameraActive
                       ? 'text-amber-600 dark:text-amber-400'
                       : 'text-brand-600 dark:text-brand-400'
                   }`} />
-                  {isFaceDetected && isCameraActive ? (
+                  {isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware) ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   ) : isCameraActive ? (
-                    faceStatus === 'initializing' ? (
+                    faceStatus === 'initializing' || (!isBaselineRegistered && !isSimulatedHardware) ? (
                       <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
                     ) : (
                       <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />
@@ -655,7 +703,7 @@ export const ExamSession: React.FC = () => {
                 </div>
                 <span className="text-xs font-bold">1. Face Camera</span>
                 <span className={`text-[10px] mt-0.5 ${
-                  isFaceDetected && isCameraActive
+                  isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware)
                     ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
                     : isCameraActive
                     ? 'text-amber-700 dark:text-amber-300 font-semibold'
@@ -663,8 +711,10 @@ export const ExamSession: React.FC = () => {
                 }`}>
                   {!isCameraActive
                     ? 'Click to Enable'
+                    : isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                    ? '✓ Face Verified & Registered'
                     : isFaceDetected
-                    ? '✓ Face Verified'
+                    ? 'Registering Face Profile...'
                     : faceStatus === 'camera_covered'
                     ? '⚠️ Camera Covered'
                     : faceStatus === 'multiple_faces'
@@ -719,14 +769,14 @@ export const ExamSession: React.FC = () => {
             {/* Live Camera Preview Box once camera is active */}
             {isCameraActive && cameraStream && (
               <div className={`mt-3 p-3 rounded-xl border flex items-center space-x-3.5 transition-all ${
-                isFaceDetected
+                isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
                   ? 'bg-slate-950 border-emerald-500/40 shadow-md shadow-emerald-500/10'
                   : faceStatus === 'camera_covered'
                   ? 'bg-rose-950/40 border-rose-500/50 shadow-md shadow-rose-500/10'
                   : 'bg-amber-950/40 border-amber-500/50 shadow-md shadow-amber-500/10'
               }`}>
                 <div className={`w-28 h-20 rounded-lg overflow-hidden bg-slate-900 border relative flex-shrink-0 ${
-                  isFaceDetected
+                  isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
                     ? 'border-emerald-500/60'
                     : faceStatus === 'camera_covered'
                     ? 'border-rose-500/60'
@@ -742,26 +792,38 @@ export const ExamSession: React.FC = () => {
                     style={{ transform: 'scaleX(-1)' }}
                   />
                   <span className={`absolute bottom-1 right-1 text-[8px] font-bold px-1.5 py-0.5 rounded shadow-xs ${
-                    isFaceDetected
+                    isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
                       ? 'bg-emerald-500 text-slate-950'
+                      : isFaceDetected
+                      ? 'bg-indigo-500 text-white'
                       : faceStatus === 'camera_covered'
                       ? 'bg-rose-500 text-white'
                       : 'bg-amber-500 text-slate-950'
                   }`}>
-                    {isFaceDetected ? 'FACE OK' : faceStatus === 'camera_covered' ? 'BLACK' : 'NO FACE'}
+                    {isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                      ? 'REGISTERED'
+                      : isFaceDetected
+                      ? 'SAVING...'
+                      : faceStatus === 'camera_covered'
+                      ? 'BLACK'
+                      : 'NO FACE'}
                   </span>
                 </div>
                 <div className="flex-1 text-xs">
                   <div className="flex items-center space-x-2">
                     <p className={`font-bold text-sm ${
-                      isFaceDetected
+                      isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
                         ? 'text-emerald-400'
+                        : isFaceDetected
+                        ? 'text-indigo-400'
                         : faceStatus === 'camera_covered'
                         ? 'text-rose-400'
                         : 'text-amber-400'
                     }`}>
-                      {isFaceDetected
-                        ? '✓ Face Detected & Verified'
+                      {isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                        ? '✓ Face Verified & Biometrically Registered'
+                        : isFaceDetected
+                        ? 'Capturing Candidate Facial Profile...'
                         : faceStatus === 'camera_covered'
                         ? 'Camera Feed Dark / Covered'
                         : faceStatus === 'multiple_faces'
@@ -772,8 +834,10 @@ export const ExamSession: React.FC = () => {
                     </p>
                   </div>
                   <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                    {isFaceDetected
-                      ? 'Your face is clearly visible and centered. Keep facing the camera.'
+                    {isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                      ? 'Candidate face registered. Continuous AI verification will ensure the same face continues throughout the exam.'
+                      : isFaceDetected
+                      ? 'Hold still while your baseline biometric face profile is registered...'
                       : faceStatus === 'camera_covered'
                       ? 'The camera feed is pitch black or covered. Uncover your lens and check room lighting.'
                       : faceStatus === 'multiple_faces'
@@ -868,6 +932,8 @@ export const ExamSession: React.FC = () => {
                     : faceStatus === 'multiple_faces'
                     ? 'Multiple People Detected — Only 1 Candidate Permitted'
                     : 'Face Not Detected — Look into Camera to Proceed')
+                : !isBaselineRegistered && !isSimulatedHardware
+                ? 'Registering Candidate Face Profile...'
                 : !isMicActive
                 ? '2. Please Enable Microphone'
                 : !isScreenSharing
@@ -1190,6 +1256,9 @@ export const ExamSession: React.FC = () => {
             detectedItems={detectedItems}
             mobileWarningActive={mobileWarningActive}
             modelLoaded={modelLoaded}
+            personCount={personCount}
+            isFaceMismatch={isFaceMismatch || faceMismatchActive}
+            faceMatchScore={faceMatchScore}
           />
         )}
       </div>
@@ -1299,6 +1368,32 @@ export const ExamSession: React.FC = () => {
         </div>
       )}
 
+      {/* Face Mismatch Warning Banner */}
+      {(faceMismatchActive || isFaceMismatch) && !terminatedReason && (
+        <div className="mb-6 p-4 rounded-2xl bg-rose-500/15 border-2 border-rose-500/50 text-rose-900 dark:text-rose-200 text-xs flex items-center justify-between shadow-2xl animate-pulse relative z-30 backdrop-blur-md">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-rose-500/25 text-rose-600 dark:text-rose-300 border border-rose-500/40 flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 animate-bounce" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-rose-700 dark:text-rose-300">
+                ⚠️ Security Alert: Candidate Face Mismatch Detected!
+              </h4>
+              <p className="mt-0.5 text-rose-800 dark:text-rose-200 text-[11px] leading-relaxed font-medium">
+                The face visible to the camera changed from the registered student who began the exam (Match: {faceMatchScore}%). Please ensure the registered candidate faces the camera immediately to protect examination integrity.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFaceMismatchActive(false)}
+            className="ml-3 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors whitespace-nowrap shadow-md cursor-pointer"
+          >
+            Acknowledge
+          </button>
+        </div>
+      )}
+
       {/* Question Card */}
       <div className="glass-panel rounded-3xl p-8 border border-slate-200 dark:border-white/10 shadow-2xl mb-6 relative z-10">
         {/* Question Header */}
@@ -1394,6 +1489,8 @@ export const ExamSession: React.FC = () => {
         title={
           activeWarning?.type === 'mobile_detected'
             ? 'Security Alert: Mobile Phone Detected'
+            : activeWarning?.type === 'unauthorized_object' && (activeWarning?.message.toLowerCase().includes('mismatch') || activeWarning?.message.toLowerCase().includes('candidate face'))
+            ? 'Security Alert: Candidate Face Mismatch Detected'
             : activeWarning?.type === 'unauthorized_object'
             ? 'Security Alert: Unauthorized Object Detected'
             : activeWarning?.type === 'multiple_faces'
@@ -1419,6 +1516,8 @@ export const ExamSession: React.FC = () => {
           <h4 className="text-lg font-extrabold text-slate-900 dark:text-white mb-2">
             {activeWarning?.type === 'mobile_detected'
               ? 'Close your mobile and please write your exam'
+              : activeWarning?.type === 'unauthorized_object' && (activeWarning?.message.toLowerCase().includes('mismatch') || activeWarning?.message.toLowerCase().includes('candidate face'))
+              ? 'Candidate face mismatch detected'
               : activeWarning?.type === 'unauthorized_object'
               ? 'Remove unauthorized material and write your exam'
               : activeWarning?.type === 'multiple_faces'
@@ -1440,6 +1539,18 @@ export const ExamSession: React.FC = () => {
               </p>
               <p className="text-[11px] leading-relaxed">
                 Please put away your mobile phone, tablets, or electronic devices immediately. Continuing to keep unauthorized items visible to the camera will trigger automated exam termination.
+              </p>
+            </div>
+          )}
+
+          {activeWarning?.type === 'unauthorized_object' && (activeWarning?.message.toLowerCase().includes('mismatch') || activeWarning?.message.toLowerCase().includes('candidate face')) && (
+            <div className="mb-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-left text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
+              <p className="font-bold flex items-center space-x-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Identity Verification Alert:</span>
+              </p>
+              <p className="text-[11px] leading-relaxed">
+                The face visible to the camera does not match the registered candidate. Please ensure the registered candidate is facing the camera directly to continue your exam.
               </p>
             </div>
           )}
@@ -1476,6 +1587,9 @@ export const ExamSession: React.FC = () => {
           detectedItems={detectedItems}
           mobileWarningActive={mobileWarningActive}
           modelLoaded={modelLoaded}
+          personCount={personCount}
+          isFaceMismatch={isFaceMismatch || faceMismatchActive}
+          faceMatchScore={faceMatchScore}
         />
       )}
     </div>
