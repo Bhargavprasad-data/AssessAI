@@ -113,6 +113,7 @@ export const ExamSession: React.FC = () => {
     requestMicrophone,
     requestScreenShare,
     enableSimulatedHardware,
+    disableSimulatedHardware,
     stopAllMedia,
   } = useProctoringMedia({
     onViolation: (type, metadata) => {
@@ -146,12 +147,9 @@ export const ExamSession: React.FC = () => {
     onMultipleFacesDetected: (count) => {
       if (!hasConsented || !!terminatedReason || !attemptId) return;
 
-      const haltReason = `Security Violation: Multiple persons detected (${count} faces in camera view). The exam session has been terminated immediately to ensure test integrity.`;
-      setTerminatedReason(haltReason);
-      speakWarning('Warning: Multiple faces detected. The exam session has been stopped.', true);
+      speakWarning('Warning: Multiple faces detected. Please ensure only the registered candidate is facing the camera.', true);
       reportViolation('multiple_faces', {
         count,
-        action: 'exam_halted',
         reason: `Multiple faces (${count}) detected in camera view during exam`,
       });
     },
@@ -391,7 +389,11 @@ export const ExamSession: React.FC = () => {
                 setCurrentQuestion(res.current_question);
                 setHasConsented(true);
                 setTerminatedReason(null);
-                enableSimulatedHardware();
+                disableSimulatedHardware();
+                if (!isCameraActive || !cameraStream) {
+                  requestCamera().catch((e) => console.warn('Could not re-acquire camera on attempt resume:', e));
+                  requestMicrophone().catch((e) => console.warn('Could not re-acquire mic on attempt resume:', e));
+                }
               }
             } catch (err: any) {
               console.warn('Could not auto-resume ongoing attempt:', err);
@@ -409,7 +411,7 @@ export const ExamSession: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [assessmentId, navigate, enableSimulatedHardware]);
+  }, [assessmentId, navigate, disableSimulatedHardware, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
 
   // Join / Start Attempt after consent
   const handleJoinAttempt = async () => {
@@ -504,7 +506,11 @@ export const ExamSession: React.FC = () => {
         setCurrentQuestion(res.current_question);
         setHasConsented(true);
         setResumeMessage(null);
-        enableSimulatedHardware();
+        disableSimulatedHardware();
+        if (!isCameraActive || !cameraStream) {
+          await requestCamera().catch(() => null);
+          await requestMicrophone().catch(() => null);
+        }
         await enterFullscreen();
       }
     } catch (err: any) {
@@ -514,7 +520,19 @@ export const ExamSession: React.FC = () => {
     } finally {
       if (!isAuto) setCheckingResume(false);
     }
-  }, [assessmentId]);
+  }, [assessmentId, disableSimulatedHardware, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
+
+  // Real-time camera recovery: If an ongoing exam was somehow placed into simulation mode, immediately revert to real webcam
+  useEffect(() => {
+    if (hasConsented && attemptId && isSimulatedHardware) {
+      disableSimulatedHardware();
+      requestCamera().then(() => {
+        requestMicrophone().catch(() => {});
+      }).catch((e) => {
+        console.warn('Auto-recovery camera error:', e);
+      });
+    }
+  }, [hasConsented, attemptId, isSimulatedHardware, disableSimulatedHardware, requestCamera, requestMicrophone]);
 
   // Real-time WebSocket listener for instant ban revocation & resume signals
   useEffect(() => {
@@ -1563,7 +1581,15 @@ export const ExamSession: React.FC = () => {
           </div>
 
           <button
-            onClick={dismissWarning}
+            onClick={() => {
+              dismissWarning();
+              if (isSimulatedHardware) {
+                disableSimulatedHardware();
+              }
+              if (!isCameraActive || !cameraStream) {
+                requestCamera().catch(() => {});
+              }
+            }}
             className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all text-white flex items-center justify-center space-x-2 shadow-lg cursor-pointer ${
               activeWarning?.type === 'mobile_detected'
                 ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/30'

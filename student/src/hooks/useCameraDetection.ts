@@ -389,7 +389,7 @@ export function useCameraDetection({
       return;
     }
 
-    if (isSimulatedHardware) {
+    if (isSimulatedHardware && !isActive) {
       setFaceStatus('face_detected');
       setIsFaceDetected(true);
       setIsFaceMismatch(false);

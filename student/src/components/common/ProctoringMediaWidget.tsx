@@ -99,6 +99,17 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
     }
   }, [cameraStream, isMinimized, isCameraActive]);
 
+  // Keep video playing if browser paused it on modal dialogs or focus shifts
+  useEffect(() => {
+    const ensurePlaying = () => {
+      if (!isMinimized && videoRef.current && cameraStream && videoRef.current.paused) {
+        videoRef.current.play().catch(() => {});
+      }
+    };
+    const interval = setInterval(ensurePlaying, 1000);
+    return () => clearInterval(interval);
+  }, [cameraStream, isMinimized]);
+
   // Drag
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true);

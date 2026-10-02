@@ -34,6 +34,11 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
   const requestCamera = async () => {
     try {
       setMediaError(null);
+      if (simIntervalRef.current) {
+        clearInterval(simIntervalRef.current);
+        simIntervalRef.current = null;
+      }
+      setIsSimulatedHardware(false);
       if (!navigator?.mediaDevices?.getUserMedia) {
         throw new Error('Webcam API is not supported or accessible in this browser context.');
       }
@@ -347,6 +352,15 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     return true;
   }, []);
 
+  // Disable simulated hardware & clear simulation timers
+  const disableSimulatedHardware = useCallback(() => {
+    if (simIntervalRef.current) {
+      clearInterval(simIntervalRef.current);
+      simIntervalRef.current = null;
+    }
+    setIsSimulatedHardware(false);
+  }, []);
+
   // Stop all active media streams cleanly
   const stopAllMedia = useCallback(() => {
     if (animationFrameRef.current) {
@@ -420,6 +434,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     requestScreenShare,
     requestAllPermissions,
     enableSimulatedHardware,
+    disableSimulatedHardware,
     stopAllMedia,
   };
 }
