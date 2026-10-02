@@ -131,6 +131,7 @@ export const ExamSession: React.FC = () => {
     faceMatchScore,
     personCount,
     isBaselineRegistered,
+    resetDetectionIncidents,
   } = useCameraDetection({
     cameraStream,
     isCameraActive,
@@ -1588,6 +1589,7 @@ export const ExamSession: React.FC = () => {
           <button
             onClick={() => {
               dismissWarning();
+              resetDetectionIncidents();
               if (!isCameraActive || !cameraStream) {
                 requestCamera().catch(() => {});
               }

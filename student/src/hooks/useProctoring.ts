@@ -35,8 +35,8 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
 
     const now = Date.now();
     const lastTime = lastReportedTimeRef.current[type] || 0;
-    // 12-second client-side debounce filter to allow student time to react and correct behavior
-    if (now - lastTime < 12000) {
+    // 10-second client-side debounce filter between strikes of the same violation type
+    if (now - lastTime < 10000) {
       return;
     }
     lastReportedTimeRef.current[type] = now;
@@ -196,11 +196,11 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
   }, [isActive, reportViolation]);
 
   const dismissWarning = useCallback(() => {
-    // When returning to exam, apply a 10-second grace period for all violation types
-    // so the student can resume without an immediate instant re-trigger
-    const resumeGrace = Date.now() + 10000;
+    // When returning to exam, set timestamp to now - 8000ms
+    // With 10s debounce, this provides exactly 2 seconds of grace before another strike can trigger
+    const now = Date.now();
     Object.keys(lastReportedTimeRef.current).forEach((key) => {
-      lastReportedTimeRef.current[key] = Math.max(lastReportedTimeRef.current[key] || 0, resumeGrace);
+      lastReportedTimeRef.current[key] = now - 8000;
     });
     setActiveWarning(null);
   }, []);

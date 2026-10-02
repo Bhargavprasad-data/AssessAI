@@ -141,10 +141,13 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
   // Find unauthorized objects
   const hasPhone = detectedItems.some((d) => {
     const c = d.class.toLowerCase();
-    if (c === 'cell phone' || c === 'telephone') return d.score >= 0.65;
+    if (c === 'cell phone' || c === 'telephone' || c === 'remote') return d.score >= 0.45;
     return false;
   });
-  const hasBook = detectedItems.some((d) => d.class === 'book' && d.score >= 0.65);
+  const hasBook = detectedItems.some((d) => {
+    const c = d.class.toLowerCase();
+    return (c === 'book' || c === 'laptop') && d.score >= 0.45;
+  });
 
   return (
     <div
