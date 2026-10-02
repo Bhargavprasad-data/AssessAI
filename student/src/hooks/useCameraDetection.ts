@@ -481,13 +481,13 @@ export function useCameraDetection({
                   // 5 consecutive frames (~600ms) confirms multiple people in frame
                   if (multipleFacesConsecutiveFramesRef.current >= 5) {
                     setFaceStatus('multiple_faces');
-                    setIsFaceDetected(false);
+                    setIsFaceDetected(true);
                     setIsFaceMismatch(false);
 
                     if (isActive) {
                       const now = Date.now();
                       const lastMultipleFacesTime = lastViolationTimeRef.current['multiple_faces'] || 0;
-                      if (!multipleFacesIncidentActiveRef.current && now - lastMultipleFacesTime >= 12000) {
+                      if (!multipleFacesIncidentActiveRef.current || now - lastMultipleFacesTime >= 8000) {
                         multipleFacesIncidentActiveRef.current = true;
                         lastViolationTimeRef.current['multiple_faces'] = now;
                         onMultipleFacesDetected?.(detectedFaceCount);

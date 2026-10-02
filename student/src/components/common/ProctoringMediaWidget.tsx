@@ -257,47 +257,32 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
               </div>
             )}
 
-            {/* Multiple Faces Detected Overlay Banner */}
+            {/* Multiple Faces Detected Warning Banner */}
             {personCount > 1 && (
-              <div className="absolute inset-0 bg-rose-950/85 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center border-2 border-rose-500 animate-pulse z-20">
-                <div className="w-9 h-9 rounded-full bg-rose-500/30 border border-rose-400 flex items-center justify-center mb-1.5 shadow-lg shadow-rose-500/50">
-                  <AlertCircle className="w-5 h-5 text-rose-300 animate-bounce" />
-                </div>
-                <span className="text-xs font-black text-white tracking-wide uppercase">
-                  Multiple Faces Detected! ({personCount})
-                </span>
-                <span className="text-[10px] text-rose-200 mt-0.5 leading-tight font-medium">
-                  Exam session halted. Only 1 candidate permitted.
+              <div className="absolute bottom-0 inset-x-0 bg-rose-950/90 backdrop-blur-sm p-1.5 text-center border-t border-rose-500 flex items-center justify-center space-x-1.5 z-20">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0 animate-bounce" />
+                <span className="text-[10px] font-bold text-rose-200">
+                  Warning: Multiple Faces ({personCount}) — Only candidate permitted
                 </span>
               </div>
             )}
 
-            {/* Candidate Identity Face Mismatch Overlay Banner */}
+            {/* Candidate Identity Face Mismatch Warning Banner */}
             {isFaceMismatch && personCount <= 1 && (
-              <div className="absolute inset-0 bg-amber-950/85 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center border-2 border-amber-500 animate-pulse z-20">
-                <div className="w-9 h-9 rounded-full bg-amber-500/30 border border-amber-400 flex items-center justify-center mb-1.5 shadow-lg shadow-amber-500/50">
-                  <AlertCircle className="w-5 h-5 text-amber-300 animate-bounce" />
-                </div>
-                <span className="text-xs font-black text-white tracking-wide uppercase">
-                  Face Mismatch Detected!
-                </span>
-                <span className="text-[10px] text-amber-200 mt-0.5 leading-tight font-medium">
-                  Match: {faceMatchScore}%. Registered candidate must face camera.
+              <div className="absolute bottom-0 inset-x-0 bg-amber-950/90 backdrop-blur-sm p-1.5 text-center border-t border-amber-500 flex items-center justify-center space-x-1.5 z-20">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 animate-bounce" />
+                <span className="text-[10px] font-bold text-amber-200">
+                  Warning: Face Mismatch ({faceMatchScore}%) — Candidate must face camera
                 </span>
               </div>
             )}
 
             {/* AI Object Guard Warning Banner Overlay on Mobile Detection */}
             {(mobileWarningActive || hasPhone) && personCount <= 1 && !isFaceMismatch && (
-              <div className="absolute inset-0 bg-rose-950/75 backdrop-blur-[2px] flex flex-col items-center justify-center p-3 text-center border-2 border-rose-500 animate-pulse z-10">
-                <div className="w-9 h-9 rounded-full bg-rose-500/30 border border-rose-400 flex items-center justify-center mb-1.5 shadow-lg shadow-rose-500/50">
-                  <Smartphone className="w-5 h-5 text-rose-300 animate-bounce" />
-                </div>
-                <span className="text-xs font-black text-white tracking-wide uppercase">
-                  Mobile Phone Detected!
-                </span>
-                <span className="text-[10px] text-rose-200 mt-0.5 leading-tight font-medium">
-                  Please put away your device immediately.
+              <div className="absolute bottom-0 inset-x-0 bg-rose-950/90 backdrop-blur-sm p-1.5 text-center border-t border-rose-500 flex items-center justify-center space-x-1.5 z-10">
+                <Smartphone className="w-3.5 h-3.5 text-rose-400 flex-shrink-0 animate-bounce" />
+                <span className="text-[10px] font-bold text-rose-200">
+                  Warning: Mobile Phone Detected — Put device away
                 </span>
               </div>
             )}
@@ -336,7 +321,7 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
               <div>
                 {personCount > 1 ? (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
-                    {personCount} FACES (HALT)
+                    {personCount} FACES (WARNING)
                   </span>
                 ) : isFaceMismatch ? (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
@@ -440,7 +425,7 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
                 personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'
               }`}>
                 {personCount > 1
-                  ? `SECURITY HALT: ${personCount} FACES DETECTED`
+                  ? `SECURITY WARNING: ${personCount} FACES DETECTED`
                   : isFaceMismatch
                   ? `IDENTITY WARNING: FACE MISMATCH (${faceMatchScore}%)`
                   : mobileWarningActive
