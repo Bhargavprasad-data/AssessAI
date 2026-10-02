@@ -14,7 +14,6 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
-  const [isSimulatedHardware, setIsSimulatedHardware] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
@@ -28,17 +27,11 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
   const noiseSpikeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioIncidentActiveRef = useRef<boolean>(false);
   const quietResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const simIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 1. Request Camera Permission
-  const requestCamera = async () => {
+  const requestCamera = useCallback(async () => {
     try {
       setMediaError(null);
-      if (simIntervalRef.current) {
-        clearInterval(simIntervalRef.current);
-        simIntervalRef.current = null;
-      }
-      setIsSimulatedHardware(false);
       if (!navigator?.mediaDevices?.getUserMedia) {
         throw new Error('Webcam API is not supported or accessible in this browser context.');
       }
@@ -67,7 +60,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       const isNotFound = err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError';
       const isDenied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
       const msg = isNotFound
-        ? 'No camera found. Connect a webcam or click "Enable Simulated Hardware" below.'
+        ? 'No camera found. Please connect a webcam and click Retry.'
         : isDenied
         ? 'Camera permission denied. Please allow camera access in your browser.'
         : `Camera error: ${err.message || 'unavailable'}`;
@@ -75,10 +68,10 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       setIsCameraActive(false);
       return null;
     }
-  };
+  }, [onViolation]);
 
   // 2. Request Microphone Permission & Setup Audio Analyser
-  const requestMicrophone = async () => {
+  const requestMicrophone = useCallback(async () => {
     try {
       setMediaError(null);
       if (!navigator?.mediaDevices?.getUserMedia) {
@@ -126,7 +119,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
           const level = Math.min(100, Math.round((avg / 128) * 100));
           setAudioLevel(level);
 
-          // Audio spike / noise detection (>55% sustained for 1.2 seconds, exactly 1 strike per noise episode)
+          // Audio spike / noise detection (>55% sustained for 1.2 seconds)
           if (level > 55) {
             if (quietResetTimerRef.current) {
               clearTimeout(quietResetTimerRef.current);
@@ -166,7 +159,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       const isNotFound = err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError';
       const isDenied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
       const msg = isNotFound
-        ? 'No microphone found. Connect a mic or click "Enable Simulated Hardware" below.'
+        ? 'No microphone found. Please connect a microphone and click Retry.'
         : isDenied
         ? 'Microphone permission denied. Please allow microphone access in your browser.'
         : `Microphone error: ${err.message || 'unavailable'}`;
@@ -174,10 +167,10 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       setIsMicActive(false);
       return null;
     }
-  };
+  }, [onViolation]);
 
   // 3. Request Screen Sharing Permission
-  const requestScreenShare = async () => {
+  const requestScreenShare = useCallback(async () => {
     try {
       setMediaError(null);
       if (!navigator?.mediaDevices?.getDisplayMedia) {
@@ -214,152 +207,16 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       setIsScreenSharing(false);
       return null;
     }
-  };
+  }, [onViolation]);
 
   // 4. Request All Hardware sequentially
-  const requestAllPermissions = async () => {
+  const requestAllPermissions = useCallback(async () => {
     setMediaError(null);
     const cam = await requestCamera();
     const mic = await requestMicrophone();
     const screen = await requestScreenShare();
     return !!(cam && mic && screen);
-  };
-
-  // 5. Simulated Hardware Fallback (For devices without physical webcam/mic or dev testing)
-  const enableSimulatedHardware = useCallback(() => {
-    setMediaError(null);
-    setIsSimulatedHardware(true);
-
-    // Stop any existing simulated intervals
-    if (simIntervalRef.current) {
-      clearInterval(simIntervalRef.current);
-      simIntervalRef.current = null;
-    }
-
-    // A. Simulated Camera Canvas (320x240 animated stream)
-    const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 240;
-    const ctx = canvas.getContext('2d');
-    let frame = 0;
-
-    const draw = () => {
-      if (!ctx) return;
-      frame++;
-      // Dark gradient background
-      const grad = ctx.createLinearGradient(0, 0, 0, 240);
-      grad.addColorStop(0, '#0f172a');
-      grad.addColorStop(1, '#1e293b');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 320, 240);
-
-      // Student avatar head
-      ctx.fillStyle = '#334155';
-      ctx.beginPath();
-      ctx.arc(160, 95, 45, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Student avatar shoulders
-      ctx.beginPath();
-      ctx.ellipse(160, 200, 75, 45, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Facial detection box
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(110, 50, 100, 100);
-
-      // Status text
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText('AI PROCTOR: STUDENT VERIFIED', 14, 24);
-
-      // Pulsing recording indicator
-      const pulse = (Math.sin(frame * 0.15) + 1) / 2;
-      ctx.fillStyle = `rgba(16, 185, 129, ${0.4 + pulse * 0.6})`;
-      ctx.beginPath();
-      ctx.arc(300, 20, 5, 0, Math.PI * 2);
-      ctx.fill();
-    };
-
-    simIntervalRef.current = setInterval(draw, 50);
-
-    const simVideoStream = canvas.captureStream(25);
-    simVideoStream.getVideoTracks()[0].onended = () => {
-      if (simIntervalRef.current) {
-        clearInterval(simIntervalRef.current);
-        simIntervalRef.current = null;
-      }
-    };
-
-    if (cameraStreamRef.current) {
-      cameraStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    cameraStreamRef.current = simVideoStream;
-    setCameraStream(simVideoStream);
-    setIsCameraActive(true);
-
-    // B. Simulated Microphone with synthetic audio
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioCtx();
-      const dest = audioCtx.createMediaStreamDestination();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.005, audioCtx.currentTime);
-      osc.connect(gain);
-      gain.connect(dest);
-      osc.start();
-
-      const simAudioStream = dest.stream;
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      micStreamRef.current = simAudioStream;
-      setMicStream(simAudioStream);
-      setIsMicActive(true);
-      setAudioLevel(22);
-    } catch {
-      setIsMicActive(true);
-      setAudioLevel(20);
-    }
-
-    // C. Simulated Screen Share Canvas
-    const screenCanvas = document.createElement('canvas');
-    screenCanvas.width = 640;
-    screenCanvas.height = 360;
-    const sCtx = screenCanvas.getContext('2d');
-    if (sCtx) {
-      sCtx.fillStyle = '#090d16';
-      sCtx.fillRect(0, 0, 640, 360);
-      sCtx.fillStyle = '#38bdf8';
-      sCtx.font = 'bold 16px sans-serif';
-      sCtx.fillText('Active Exam Screen (Monitoring Active)', 30, 50);
-      sCtx.fillStyle = '#64748b';
-      sCtx.font = '12px sans-serif';
-      sCtx.fillText('Smart Proctoring System Workspace Sharing Stream', 30, 80);
-    }
-    const simScreenStream = screenCanvas.captureStream(5);
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    screenStreamRef.current = simScreenStream;
-    setScreenStream(simScreenStream);
-    setIsScreenSharing(true);
-
-    return true;
-  }, []);
-
-  // Disable simulated hardware & clear simulation timers
-  const disableSimulatedHardware = useCallback(() => {
-    if (simIntervalRef.current) {
-      clearInterval(simIntervalRef.current);
-      simIntervalRef.current = null;
-    }
-    setIsSimulatedHardware(false);
-  }, []);
+  }, [requestCamera, requestMicrophone, requestScreenShare]);
 
   // Stop all active media streams cleanly
   const stopAllMedia = useCallback(() => {
@@ -370,10 +227,6 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     if (noiseSpikeTimerRef.current) {
       clearTimeout(noiseSpikeTimerRef.current);
       noiseSpikeTimerRef.current = null;
-    }
-    if (simIntervalRef.current) {
-      clearInterval(simIntervalRef.current);
-      simIntervalRef.current = null;
     }
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
@@ -408,7 +261,6 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     setIsCameraActive(false);
     setIsMicActive(false);
     setIsScreenSharing(false);
-    setIsSimulatedHardware(false);
     setAudioLevel(0);
   }, []);
 
@@ -426,15 +278,12 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
     isCameraActive,
     isMicActive,
     isScreenSharing,
-    isSimulatedHardware,
     audioLevel,
     mediaError,
     requestCamera,
     requestMicrophone,
     requestScreenShare,
     requestAllPermissions,
-    enableSimulatedHardware,
-    disableSimulatedHardware,
     stopAllMedia,
   };
 }

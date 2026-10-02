@@ -106,14 +106,11 @@ export const ExamSession: React.FC = () => {
     isCameraActive,
     isMicActive,
     isScreenSharing,
-    isSimulatedHardware,
     audioLevel,
     mediaError,
     requestCamera,
     requestMicrophone,
     requestScreenShare,
-    enableSimulatedHardware,
-    disableSimulatedHardware,
     stopAllMedia,
   } = useProctoringMedia({
     onViolation: (type, metadata) => {
@@ -138,7 +135,6 @@ export const ExamSession: React.FC = () => {
     cameraStream,
     isCameraActive,
     isActive: hasConsented && !terminatedReason && !!attemptId,
-    isSimulatedHardware,
     onViolation: (type, metadata) => {
       if (hasConsented && attemptId) {
         reportViolation(type, metadata);
@@ -389,7 +385,6 @@ export const ExamSession: React.FC = () => {
                 setCurrentQuestion(res.current_question);
                 setHasConsented(true);
                 setTerminatedReason(null);
-                disableSimulatedHardware();
                 if (!isCameraActive || !cameraStream) {
                   requestCamera().catch((e) => console.warn('Could not re-acquire camera on attempt resume:', e));
                   requestMicrophone().catch((e) => console.warn('Could not re-acquire mic on attempt resume:', e));
@@ -411,7 +406,7 @@ export const ExamSession: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [assessmentId, navigate, disableSimulatedHardware, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
+  }, [assessmentId, navigate, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
 
   // Join / Start Attempt after consent
   const handleJoinAttempt = async () => {
@@ -506,7 +501,6 @@ export const ExamSession: React.FC = () => {
         setCurrentQuestion(res.current_question);
         setHasConsented(true);
         setResumeMessage(null);
-        disableSimulatedHardware();
         if (!isCameraActive || !cameraStream) {
           await requestCamera().catch(() => null);
           await requestMicrophone().catch(() => null);
@@ -520,19 +514,18 @@ export const ExamSession: React.FC = () => {
     } finally {
       if (!isAuto) setCheckingResume(false);
     }
-  }, [assessmentId, disableSimulatedHardware, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
+  }, [assessmentId, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
 
-  // Real-time camera recovery: If an ongoing exam was somehow placed into simulation mode, immediately revert to real webcam
+  // Real-time camera watchdog: Ensure physical camera remains connected during active exam
   useEffect(() => {
-    if (hasConsented && attemptId && isSimulatedHardware) {
-      disableSimulatedHardware();
+    if (hasConsented && attemptId && !isCameraActive) {
       requestCamera().then(() => {
         requestMicrophone().catch(() => {});
       }).catch((e) => {
-        console.warn('Auto-recovery camera error:', e);
+        console.warn('Proctoring camera re-acquisition error:', e);
       });
     }
-  }, [hasConsented, attemptId, isSimulatedHardware, disableSimulatedHardware, requestCamera, requestMicrophone]);
+  }, [hasConsented, attemptId, isCameraActive, requestCamera, requestMicrophone]);
 
   // Real-time WebSocket listener for instant ban revocation & resume signals
   useEffect(() => {
@@ -582,8 +575,8 @@ export const ExamSession: React.FC = () => {
   if (!hasConsented) {
     const isHardwareReady =
       isCameraActive &&
-      (isFaceDetected || isSimulatedHardware) &&
-      (isBaselineRegistered || isSimulatedHardware) &&
+      isFaceDetected &&
+      isBaselineRegistered &&
       isMicActive &&
       isScreenSharing;
     const isExpired = !!assessmentMeta?.is_expired;
@@ -694,7 +687,7 @@ export const ExamSession: React.FC = () => {
                 type="button"
                 onClick={requestCamera}
                 className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                  isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware)
+                  isFaceDetected && isCameraActive && isBaselineRegistered
                     ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/40 text-emerald-800 dark:text-emerald-300 shadow-md shadow-emerald-500/10'
                     : isCameraActive
                     ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-300 shadow-md shadow-amber-500/10'
@@ -703,16 +696,16 @@ export const ExamSession: React.FC = () => {
               >
                 <div className="flex items-center justify-between mb-2">
                   <Camera className={`w-5 h-5 ${
-                    isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware)
+                    isFaceDetected && isCameraActive && isBaselineRegistered
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : isCameraActive
                       ? 'text-amber-600 dark:text-amber-400'
                       : 'text-brand-600 dark:text-brand-400'
                   }`} />
-                  {isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware) ? (
+                  {isFaceDetected && isCameraActive && isBaselineRegistered ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   ) : isCameraActive ? (
-                    faceStatus === 'initializing' || (!isBaselineRegistered && !isSimulatedHardware) ? (
+                    faceStatus === 'initializing' || !isBaselineRegistered ? (
                       <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
                     ) : (
                       <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />
@@ -721,7 +714,7 @@ export const ExamSession: React.FC = () => {
                 </div>
                 <span className="text-xs font-bold">1. Face Camera</span>
                 <span className={`text-[10px] mt-0.5 ${
-                  isFaceDetected && isCameraActive && (isBaselineRegistered || isSimulatedHardware)
+                  isFaceDetected && isCameraActive && isBaselineRegistered
                     ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
                     : isCameraActive
                     ? 'text-amber-700 dark:text-amber-300 font-semibold'
@@ -729,7 +722,7 @@ export const ExamSession: React.FC = () => {
                 }`}>
                   {!isCameraActive
                     ? 'Click to Enable'
-                    : isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                    : isFaceDetected && isBaselineRegistered
                     ? '✓ Face Verified & Registered'
                     : isFaceDetected
                     ? 'Registering Face Profile...'
@@ -787,14 +780,14 @@ export const ExamSession: React.FC = () => {
             {/* Live Camera Preview Box once camera is active */}
             {isCameraActive && cameraStream && (
               <div className={`mt-3 p-3 rounded-xl border flex items-center space-x-3.5 transition-all ${
-                isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                isFaceDetected && isBaselineRegistered
                   ? 'bg-slate-950 border-emerald-500/40 shadow-md shadow-emerald-500/10'
                   : faceStatus === 'camera_covered'
                   ? 'bg-rose-950/40 border-rose-500/50 shadow-md shadow-rose-500/10'
                   : 'bg-amber-950/40 border-amber-500/50 shadow-md shadow-amber-500/10'
               }`}>
                 <div className={`w-28 h-20 rounded-lg overflow-hidden bg-slate-900 border relative flex-shrink-0 ${
-                  isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                  isFaceDetected && isBaselineRegistered
                     ? 'border-emerald-500/60'
                     : faceStatus === 'camera_covered'
                     ? 'border-rose-500/60'
@@ -810,7 +803,7 @@ export const ExamSession: React.FC = () => {
                     style={{ transform: 'scaleX(-1)' }}
                   />
                   <span className={`absolute bottom-1 right-1 text-[8px] font-bold px-1.5 py-0.5 rounded shadow-xs ${
-                    isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                    isFaceDetected && isBaselineRegistered
                       ? 'bg-emerald-500 text-slate-950'
                       : isFaceDetected
                       ? 'bg-indigo-500 text-white'
@@ -818,7 +811,7 @@ export const ExamSession: React.FC = () => {
                       ? 'bg-rose-500 text-white'
                       : 'bg-amber-500 text-slate-950'
                   }`}>
-                    {isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                    {isFaceDetected && isBaselineRegistered
                       ? 'REGISTERED'
                       : isFaceDetected
                       ? 'SAVING...'
@@ -830,7 +823,7 @@ export const ExamSession: React.FC = () => {
                 <div className="flex-1 text-xs">
                   <div className="flex items-center space-x-2">
                     <p className={`font-bold text-sm ${
-                      isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                      isFaceDetected && isBaselineRegistered
                         ? 'text-emerald-400'
                         : isFaceDetected
                         ? 'text-indigo-400'
@@ -838,7 +831,7 @@ export const ExamSession: React.FC = () => {
                         ? 'text-rose-400'
                         : 'text-amber-400'
                     }`}>
-                      {isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                      {isFaceDetected && isBaselineRegistered
                         ? '✓ Face Verified & Biometrically Registered'
                         : isFaceDetected
                         ? 'Capturing Candidate Facial Profile...'
@@ -852,7 +845,7 @@ export const ExamSession: React.FC = () => {
                     </p>
                   </div>
                   <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                    {isFaceDetected && (isBaselineRegistered || isSimulatedHardware)
+                    {isFaceDetected && isBaselineRegistered
                       ? 'Candidate face registered. Continuous AI verification will ensure the same face continues throughout the exam.'
                       : isFaceDetected
                       ? 'Hold still while your baseline biometric face profile is registered...'
@@ -871,10 +864,10 @@ export const ExamSession: React.FC = () => {
                 <span>{mediaError}</span>
                 <button
                   type="button"
-                  onClick={enableSimulatedHardware}
-                  className="ml-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-rose-500/30 hover:bg-rose-500/50 text-white transition-colors"
+                  onClick={() => requestCamera()}
+                  className="ml-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-rose-500/30 hover:bg-rose-500/50 text-white transition-colors cursor-pointer"
                 >
-                  Use Simulation
+                  Retry Camera
                 </button>
               </div>
             )}
@@ -950,7 +943,7 @@ export const ExamSession: React.FC = () => {
                     : faceStatus === 'multiple_faces'
                     ? 'Multiple People Detected — Only 1 Candidate Permitted'
                     : 'Face Not Detected — Look into Camera to Proceed')
-                : !isBaselineRegistered && !isSimulatedHardware
+                : !isBaselineRegistered
                 ? 'Registering Candidate Face Profile...'
                 : !isMicActive
                 ? '2. Please Enable Microphone'
@@ -1583,9 +1576,6 @@ export const ExamSession: React.FC = () => {
           <button
             onClick={() => {
               dismissWarning();
-              if (isSimulatedHardware) {
-                disableSimulatedHardware();
-              }
               if (!isCameraActive || !cameraStream) {
                 requestCamera().catch(() => {});
               }

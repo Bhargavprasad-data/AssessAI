@@ -35,7 +35,6 @@ export interface UseCameraDetectionOptions {
   cameraStream: MediaStream | null;
   isCameraActive: boolean;
   isActive: boolean;
-  isSimulatedHardware?: boolean;
   onViolation?: (type: string, metadata?: Record<string, any>) => void;
   onMultipleFacesDetected?: (count: number) => void;
   onFaceMismatch?: (matchScore: number) => void;
@@ -211,7 +210,6 @@ export function useCameraDetection({
   cameraStream,
   isCameraActive,
   isActive,
-  isSimulatedHardware = false,
   onViolation,
   onMultipleFacesDetected,
   onFaceMismatch,
@@ -386,14 +384,6 @@ export function useCameraDetection({
       setIsFaceDetected(false);
       setIsFaceMismatch(false);
       setPersonCount(0);
-      return;
-    }
-
-    if (isSimulatedHardware && !isActive) {
-      setFaceStatus('face_detected');
-      setIsFaceDetected(true);
-      setIsFaceMismatch(false);
-      setPersonCount(1);
       return;
     }
 
@@ -733,7 +723,6 @@ export function useCameraDetection({
     isActive,
     isCameraActive,
     cameraStream,
-    isSimulatedHardware,
     triggerViolation,
     onMultipleFacesDetected,
     onFaceMismatch,
