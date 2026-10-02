@@ -16,8 +16,8 @@ export const DifficultyBadge: React.FC<DifficultyBadgeProps> = ({ difficulty, si
 
   if (diff === 'easy') {
     return (
-      <span className={`inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40 shadow-sm ${sizeClasses}`}>
-        <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400 mr-1.5 animate-pulse"></span>
+      <span className={`inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40 shadow-sm print:bg-emerald-50 print:text-emerald-800 print:border-emerald-300 ${sizeClasses}`}>
+        <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400 mr-1.5 animate-pulse print:bg-emerald-600"></span>
         Easy (1 pt)
       </span>
     );
@@ -25,8 +25,8 @@ export const DifficultyBadge: React.FC<DifficultyBadgeProps> = ({ difficulty, si
 
   if (diff === 'medium') {
     return (
-      <span className={`inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 shadow-sm ${sizeClasses}`}>
-        <span className="w-2 h-2 rounded-full bg-amber-600 dark:bg-amber-400 mr-1.5 animate-pulse"></span>
+      <span className={`inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 shadow-sm print:bg-amber-50 print:text-amber-900 print:border-amber-300 ${sizeClasses}`}>
+        <span className="w-2 h-2 rounded-full bg-amber-600 dark:bg-amber-400 mr-1.5 animate-pulse print:bg-amber-600"></span>
         Medium (2 pts)
       </span>
     );
@@ -34,8 +34,8 @@ export const DifficultyBadge: React.FC<DifficultyBadgeProps> = ({ difficulty, si
 
   if (diff === 'hard') {
     return (
-      <span className={`inline-flex items-center rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40 shadow-sm ${sizeClasses}`}>
-        <span className="w-2 h-2 rounded-full bg-rose-600 dark:bg-rose-400 mr-1.5 animate-pulse"></span>
+      <span className={`inline-flex items-center rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40 shadow-sm print:bg-rose-50 print:text-rose-900 print:border-rose-300 ${sizeClasses}`}>
+        <span className="w-2 h-2 rounded-full bg-rose-600 dark:bg-rose-400 mr-1.5 animate-pulse print:bg-rose-600"></span>
         Hard (3 pts)
       </span>
     );

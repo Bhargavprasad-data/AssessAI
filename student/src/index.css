@@ -188,62 +188,160 @@ html.dark .auth-bg {
   background-attachment: fixed;
 }
 
-/* ── Print Stylesheet ── */
+/* ── Print Stylesheet (High-Fidelity Color Preservation) ── */
 @media print {
   @page {
-    margin: 1cm;
+    margin: 12mm 10mm;
     size: A4 portrait;
   }
 
-  * {
+  :root {
+    color-scheme: light !important;
+  }
+
+  *, *::before, *::after {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     color-adjust: exact !important;
   }
 
   body, html {
+    background: #ffffff !important;
+    color: #0f172a !important;
     overflow: visible !important;
     height: auto !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
 
-  /* Light Mode Print */
-  html:not(.dark) body,
-  html:not(.dark) {
-    background: #ffffff !important;
-    color: #0f172a !important;
-  }
-
-  html:not(.dark) .glass-panel {
-    background: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
+  /* Glass Panels in Print: Clean borders without wiping out child text colors */
+  .glass-panel {
+    background-color: #ffffff !important;
+    border: 1.5px solid #e2e8f0 !important;
     box-shadow: none !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     page-break-inside: avoid;
     break-inside: avoid;
-    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Dark Mode Print */
-  html.dark body,
-  html.dark {
-    background: #090d16 !important;
-    color: #f8fafc !important;
+  /* Hero Performance Card in Print */
+  .exam-hero-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 45%, #eef2ff 100%) !important;
+    border: 1.5px solid #cbd5e1 !important;
+    border-top: 5px solid #6366f1 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  html.dark .glass-panel {
-    background: #0f172a !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    page-break-inside: avoid;
-    break-inside: avoid;
-    color: #f8fafc !important;
+  /* Text Gradients Fallback to Solid High-Contrast Colors in Print */
+  [class*="bg-clip-text"],
+  .print-color-indigo {
+    -webkit-text-fill-color: #4f46e5 !important;
+    color: #4f46e5 !important;
+    background: none !important;
+    font-weight: 900 !important;
   }
 
+  /* SVG Circular Progress Gauge */
+  svg {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  circle.accuracy-ring-bg,
+  circle.stroke-slate-200,
+  svg circle[class*="stroke-slate"] {
+    stroke: #e2e8f0 !important;
+    stroke-width: 8px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  circle.accuracy-ring-fill,
+  circle.stroke-brand-500,
+  svg circle[class*="stroke-brand"] {
+    stroke: #7c3aed !important;
+    stroke-width: 8px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Performance Grade Badges in Print */
+  .print-grade-outstanding {
+    background-color: #059669 !important;
+    color: #ffffff !important;
+    border: 1px solid #047857 !important;
+  }
+
+  .print-grade-great {
+    background-color: #7c3aed !important;
+    color: #ffffff !important;
+    border: 1px solid #6d28d9 !important;
+  }
+
+  .print-grade-passing {
+    background-color: #0284c7 !important;
+    color: #ffffff !important;
+    border: 1px solid #0369a1 !important;
+  }
+
+  .print-grade-effort {
+    background-color: #d97706 !important;
+    color: #ffffff !important;
+    border: 1px solid #b45309 !important;
+  }
+
+  .print-grade-terminated {
+    background-color: #e11d48 !important;
+    color: #ffffff !important;
+    border: 1px solid #be123c !important;
+  }
+
+  /* Stat Card Icon Boxes in Print */
+  .print-stat-amber {
+    background-color: #fef3c7 !important;
+    color: #d97706 !important;
+    border: 1px solid #fde68a !important;
+  }
+
+  .print-stat-blue {
+    background-color: #dbeafe !important;
+    color: #2563eb !important;
+    border: 1px solid #bfdbfe !important;
+  }
+
+  .print-stat-emerald {
+    background-color: #d1fae5 !important;
+    color: #059669 !important;
+    border: 1px solid #a7f3d0 !important;
+  }
+
+  .print-stat-indigo {
+    background-color: #e0e7ff !important;
+    color: #4f46e5 !important;
+    border: 1px solid #c7d2fe !important;
+  }
+
+  /* Question Options Review Highlights in Print */
+  .print-choice-correct {
+    background-color: #ecfdf5 !important;
+    border: 1.5px solid #10b981 !important;
+    color: #064e3b !important;
+    font-weight: 600 !important;
+  }
+
+  .print-choice-incorrect {
+    background-color: #fff1f2 !important;
+    border: 1.5px solid #f43f5e !important;
+    color: #881337 !important;
+    font-weight: 600 !important;
+  }
+
+  /* Hide Interactive / Navigation UI */
   aside, nav, .print\:hidden, [class*="print:hidden"] {
     display: none !important;
     visibility: hidden !important;
@@ -264,9 +362,14 @@ html.dark .auth-bg {
     position: static !important;
   }
 
-  /* Question cards clean break handling */
+  /* Avoid awkward page break cuts inside question cards */
+  .glass-panel {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   .glass-panel + .glass-panel {
-    margin-top: 12px !important;
+    margin-top: 14px !important;
   }
 }
 

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { apiFetch } from '../api/client';
 import type { AttemptResults, AttemptAnswerReview } from '../types';
 import { DifficultyBadge } from '../components/common/Badge';
+import { Modal } from '../components/common/Modal';
 import {
   CheckCircle2,
   XCircle,
@@ -33,8 +34,25 @@ export const ExamResults: React.FC = () => {
   const [filterType, setFilterType] = useState<'all' | 'correct' | 'incorrect' | 'easy' | 'medium' | 'hard'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const handlePrintClick = () => {
+    const skip = localStorage.getItem('skip_color_print_modal') === 'true';
+    if (skip) {
+      window.print();
+    } else {
+      setShowPrintModal(true);
+    }
+  };
+
+  const handleConfirmPrint = () => {
+    setShowPrintModal(false);
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
 
   useEffect(() => {
     if (isSearchOpen && searchInputRef.current) {
@@ -86,15 +104,15 @@ export const ExamResults: React.FC = () => {
     const avgTimeSec = (avgTimeMs / 1000).toFixed(1);
 
     // Performance grade
-    let grade = { label: 'Good Effort', color: 'from-amber-500 to-orange-500', icon: Award, desc: 'Solid foundation, room to level up.' };
+    let grade = { label: 'Good Effort', color: 'from-amber-500 to-orange-500', printClass: 'print-grade-effort', icon: Award, desc: 'Solid foundation, room to level up.' };
     if (results.status === 'terminated') {
-      grade = { label: 'Terminated', color: 'from-rose-600 to-red-600', icon: AlertTriangle, desc: 'Attempt was closed due to policy breach or timeout.' };
+      grade = { label: 'Terminated', color: 'from-rose-600 to-red-600', printClass: 'print-grade-terminated', icon: AlertTriangle, desc: 'Attempt was closed due to policy breach or timeout.' };
     } else if (accuracy >= 85) {
-      grade = { label: 'Outstanding Mastery', color: 'from-emerald-500 to-teal-500', icon: Trophy, desc: 'Exceptional performance across all difficulty tiers!' };
+      grade = { label: 'Outstanding Mastery', color: 'from-emerald-500 to-teal-500', printClass: 'print-grade-outstanding', icon: Trophy, desc: 'Exceptional performance across all difficulty tiers!' };
     } else if (accuracy >= 70) {
-      grade = { label: 'Great Achievement', color: 'from-brand-500 to-indigo-500', icon: Award, desc: 'Strong grasp of core concepts and problem solving.' };
+      grade = { label: 'Great Achievement', color: 'from-brand-500 to-indigo-500', printClass: 'print-grade-great', icon: Award, desc: 'Strong grasp of core concepts and problem solving.' };
     } else if (accuracy >= 50) {
-      grade = { label: 'Passing Performance', color: 'from-blue-500 to-cyan-500', icon: Sparkles, desc: 'Met minimum threshold with consistent answers.' };
+      grade = { label: 'Passing Performance', color: 'from-blue-500 to-cyan-500', printClass: 'print-grade-passing', icon: Sparkles, desc: 'Met minimum threshold with consistent answers.' };
     }
 
     return { total, correct, accuracy, durationFormatted, avgTimeSec, grade };
@@ -206,11 +224,11 @@ export const ExamResults: React.FC = () => {
 
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => window.print()}
+            onClick={handlePrintClick}
             className="inline-flex items-center space-x-1.5 py-2 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer"
-            title="Print or Save Report as PDF"
+            title="Print or Save Color Report as PDF"
           >
-            <Printer className="w-3.5 h-3.5" />
+            <Printer className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
             <span>Print Report</span>
           </button>
 
@@ -224,13 +242,13 @@ export const ExamResults: React.FC = () => {
       </div>
 
       {/* Hero Performance Card */}
-      <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-white/10 shadow-2xl mb-8 relative overflow-hidden bg-gradient-to-br from-white/90 via-slate-50/70 to-brand-50/20 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-brand-950/20">
-        <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 bg-brand-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="glass-panel exam-hero-card rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-white/10 shadow-2xl mb-8 relative overflow-hidden bg-gradient-to-br from-white/90 via-slate-50/70 to-brand-50/20 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-brand-950/20">
+        <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 bg-brand-500/10 rounded-full blur-3xl pointer-events-none print:hidden"></div>
 
         <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
           {/* Title & Performance Grade */}
           <div className="space-y-3 text-center lg:text-left flex-1">
-            <div className="inline-block px-3 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-700 dark:text-brand-300 text-xs font-bold">
+            <div className="inline-block px-3 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-700 dark:text-brand-300 text-xs font-bold print:bg-brand-50 print:text-brand-800 print:border-brand-300">
               <span>Assessment Performance Report</span>
             </div>
 
@@ -239,22 +257,22 @@ export const ExamResults: React.FC = () => {
             </h1>
 
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 pt-1">
-              <span className={`inline-flex items-center px-3 py-1 rounded-xl bg-gradient-to-r ${stats?.grade.color} text-white text-xs font-bold shadow-md`}>
+              <span className={`inline-flex items-center px-3 py-1 rounded-xl bg-gradient-to-r ${stats?.grade.color} text-white text-xs font-bold shadow-md ${stats?.grade.printClass || ''}`}>
                 <span>{stats?.grade.label}</span>
               </span>
 
-              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/5 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-white/5">
-                Outcome: <strong className="text-slate-800 dark:text-slate-200">{results.completion_reason?.replace(/_/g, ' ') || results.status}</strong>
+              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/5 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-white/5 print:bg-slate-100 print:text-slate-700 print:border-slate-300">
+                Outcome: <strong className="text-slate-800 dark:text-slate-200 print:text-slate-900">{results.completion_reason?.replace(/_/g, ' ') || results.status}</strong>
               </span>
             </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-lg leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-lg leading-relaxed print:text-slate-700">
               {stats?.grade.desc}
             </p>
           </div>
 
           {/* Accuracy Gauge & Score Display */}
-          <div className="flex items-center gap-6 bg-white/80 dark:bg-slate-900/80 p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-lg flex-shrink-0">
+          <div className="flex items-center gap-6 bg-white/80 dark:bg-slate-900/80 p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-lg flex-shrink-0 print:bg-white print:border-slate-300">
             {/* SVG Circular Progress */}
             <div className="relative flex items-center justify-center w-28 h-28">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 96 96">
@@ -262,7 +280,7 @@ export const ExamResults: React.FC = () => {
                   cx="48"
                   cy="48"
                   r={radius}
-                  className="stroke-slate-200 dark:stroke-white/10"
+                  className="stroke-slate-200 dark:stroke-white/10 accuracy-ring-bg"
                   strokeWidth="8"
                   fill="transparent"
                 />
@@ -270,7 +288,7 @@ export const ExamResults: React.FC = () => {
                   cx="48"
                   cy="48"
                   r={radius}
-                  className="stroke-brand-500 transition-all duration-1000 ease-out"
+                  className="stroke-brand-500 transition-all duration-1000 ease-out accuracy-ring-fill"
                   strokeWidth="8"
                   strokeDasharray={circumference}
                   strokeDashoffset={strokeDashoffset}
@@ -279,7 +297,7 @@ export const ExamResults: React.FC = () => {
                 />
               </svg>
               <div className="absolute flex flex-col items-center justify-center text-center">
-                <span className="text-2xl font-black text-slate-900 dark:text-white">
+                <span className="text-2xl font-black text-slate-900 dark:text-white print:text-slate-950">
                   {stats?.accuracy}%
                 </span>
                 <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -288,17 +306,17 @@ export const ExamResults: React.FC = () => {
               </div>
             </div>
 
-            <div className="h-16 w-[1px] bg-slate-200 dark:bg-white/10"></div>
+            <div className="h-16 w-[1px] bg-slate-200 dark:bg-white/10 print:bg-slate-300"></div>
 
             {/* Score & Ratio */}
             <div className="space-y-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
                 Final Weighted Score
               </span>
-              <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-indigo-600 dark:from-brand-400 dark:to-indigo-300 block">
+              <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-indigo-600 dark:from-brand-400 dark:to-indigo-300 block print-color-indigo">
                 {results.final_score.toFixed(1)}
               </span>
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 block">
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 block print:text-slate-700">
                 {stats?.correct} of {stats?.total} questions correct
               </span>
             </div>
@@ -306,9 +324,9 @@ export const ExamResults: React.FC = () => {
         </div>
 
         {/* 4 Stat Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mt-8 pt-6 border-t border-slate-200/80 dark:border-white/10">
-          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mt-8 pt-6 border-t border-slate-200/80 dark:border-white/10 print:border-slate-200">
+          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5 print:bg-slate-50 print:border-slate-200">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0 print-stat-amber">
               <Zap className="w-5 h-5" />
             </div>
             <div>
@@ -319,33 +337,33 @@ export const ExamResults: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5 print:bg-slate-50 print:border-slate-200">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 print-stat-blue">
               <Clock className="w-5 h-5" />
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Avg Response Time</span>
-              <span className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 block">{stats?.avgTimeSec}s / q</span>
+              <span className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 block print:text-slate-900">{stats?.avgTimeSec}s / q</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
+          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5 print:bg-slate-50 print:border-slate-200">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0 print-stat-emerald">
               <BarChart3 className="w-5 h-5" />
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Total Duration</span>
-              <span className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 block">{stats?.durationFormatted}</span>
+              <span className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 block print:text-slate-900">{stats?.durationFormatted}</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+          <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 flex items-center space-x-3.5 print:bg-slate-50 print:border-slate-200">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0 print-stat-indigo">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Proctoring Status</span>
-              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block">Verified Authentic</span>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block print:text-emerald-700">Verified Authentic</span>
             </div>
           </div>
         </div>
@@ -498,19 +516,19 @@ export const ExamResults: React.FC = () => {
 
                     <div className="flex items-center space-x-2 flex-shrink-0 self-start sm:self-auto ml-10 sm:ml-0">
                       {timeSec && (
-                        <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-lg">
+                        <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-lg print:bg-slate-100 print:text-slate-700">
                           <Clock className="w-3 h-3" />
                           <span>{timeSec}s</span>
                         </span>
                       )}
                       <DifficultyBadge difficulty={item.difficulty} size="sm" />
                       {item.is_correct ? (
-                        <span className="inline-flex items-center space-x-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                        <span className="inline-flex items-center space-x-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-500/20 print:bg-emerald-50 print:text-emerald-800 print:border-emerald-300">
                           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                           <span>Correct</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center space-x-1 text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1 rounded-xl border border-rose-200 dark:border-rose-500/20">
+                        <span className="inline-flex items-center space-x-1 text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1 rounded-xl border border-rose-200 dark:border-rose-500/20 print:bg-rose-50 print:text-rose-800 print:border-rose-300">
                           <X className="w-3.5 h-3.5 stroke-[2.5]" />
                           <span>Incorrect</span>
                         </span>
@@ -524,21 +542,21 @@ export const ExamResults: React.FC = () => {
                       const isUserChoice = item.selected_option_index === optIdx;
                       const isCorrectChoice = item.correct_option_index === optIdx;
 
-                      let style = 'bg-slate-50/80 dark:bg-white/5 border-slate-200/80 dark:border-white/5 text-slate-700 dark:text-slate-300';
+                      let style = 'bg-slate-50/80 dark:bg-white/5 border-slate-200/80 dark:border-white/5 text-slate-700 dark:text-slate-300 print:bg-slate-50 print:text-slate-800 print:border-slate-200';
                       let badge = null;
 
                       if (isCorrectChoice) {
-                        style = 'bg-emerald-500/10 border-emerald-500/40 text-emerald-950 dark:text-emerald-200 font-semibold shadow-sm ring-1 ring-emerald-500/20';
+                        style = 'bg-emerald-500/10 border-emerald-500/40 text-emerald-950 dark:text-emerald-200 font-semibold shadow-sm ring-1 ring-emerald-500/20 print-choice-correct';
                         badge = (
-                          <span className="inline-flex items-center space-x-1 text-[10px] font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider print:bg-emerald-100 print:text-emerald-800">
                             <Check className="w-3 h-3 stroke-[2.5]" />
                             <span>Correct Answer</span>
                           </span>
                         );
                       } else if (isUserChoice && !isCorrectChoice) {
-                        style = 'bg-rose-500/10 border-rose-500/40 text-rose-950 dark:text-rose-200 font-semibold shadow-sm ring-1 ring-rose-500/20';
+                        style = 'bg-rose-500/10 border-rose-500/40 text-rose-950 dark:text-rose-200 font-semibold shadow-sm ring-1 ring-rose-500/20 print-choice-incorrect';
                         badge = (
-                          <span className="inline-flex items-center space-x-1 text-[10px] font-extrabold text-rose-700 dark:text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-extrabold text-rose-700 dark:text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider print:bg-rose-100 print:text-rose-800">
                             <X className="w-3 h-3 stroke-[2.5]" />
                             <span>Your Choice</span>
                           </span>
@@ -553,10 +571,10 @@ export const ExamResults: React.FC = () => {
                           <div className="flex items-start space-x-2.5">
                             <span className={`w-5 h-5 rounded-lg flex items-center justify-center font-bold text-[10px] flex-shrink-0 mt-0.5 ${
                               isCorrectChoice
-                                ? 'bg-emerald-600 text-white'
+                                ? 'bg-emerald-600 text-white print:bg-emerald-600 print:text-white'
                                 : isUserChoice
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400'
+                                ? 'bg-rose-600 text-white print:bg-rose-600 print:text-white'
+                                : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400 print:bg-slate-200 print:text-slate-700'
                             }`}>
                               {optLabels[optIdx] || optIdx + 1}
                             </span>
@@ -591,6 +609,85 @@ export const ExamResults: React.FC = () => {
           View All Attempts
         </button>
       </div>
+
+      {/* Color Print Guidance Modal */}
+      <Modal
+        isOpen={showPrintModal}
+        onClose={() => setShowPrintModal(false)}
+        title="Print in Full Color"
+        maxWidth="md"
+      >
+        <div className="space-y-4 pt-1">
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            To ensure your assessment performance report prints with vibrant colors, please check these two browser print settings:
+          </p>
+
+          <div className="space-y-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-white/10 text-xs">
+            <div className="flex items-start space-x-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-500 text-white font-bold flex items-center justify-center text-xs mt-0.5 shadow-sm">
+                1
+              </span>
+              <div>
+                <strong className="text-slate-900 dark:text-white block font-bold">
+                  Set Color to "Color"
+                </strong>
+                <span className="text-slate-600 dark:text-slate-400 leading-snug block mt-0.5">
+                  <em>Microsoft Print to PDF</em> and physical printers often default to <strong>Black and white</strong>. On the print dialog sidebar, choose <strong>Color</strong>.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-start space-x-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-500 text-white font-bold flex items-center justify-center text-xs mt-0.5 shadow-sm">
+                2
+              </span>
+              <div>
+                <strong className="text-slate-900 dark:text-white block font-bold">
+                  Enable "Background graphics"
+                </strong>
+                <span className="text-slate-600 dark:text-slate-400 leading-snug block mt-0.5">
+                  Click <strong>More settings</strong> in the print sidebar and check <strong>Background graphics</strong> to render accuracy badges, colored score rings, and question cards.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <label className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    localStorage.setItem('skip_color_print_modal', 'true');
+                  } else {
+                    localStorage.removeItem('skip_color_print_modal');
+                  }
+                }}
+                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span>Don't show this reminder again</span>
+            </label>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPrint}
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-md shadow-brand-500/20 flex items-center space-x-1.5 transition-all cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Open Print Dialog</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
