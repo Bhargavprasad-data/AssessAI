@@ -6,13 +6,50 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Predefined domain definitions with weighted keywords and characteristic tokens
+# Predefined domain definitions with weighted keywords, aliases, and characteristic tokens
 DOMAIN_KNOWLEDGE_BASE = [
+    {
+        "subject": "Data Structures & Algorithms",
+        "category": "Core Computer Science",
+        "suggested_title": "Data Structures & Algorithms Assessment",
+        "icon": "binary",
+        "aliases": [
+            "Data Structures", "Data Structures and Algorithms", "DSA",
+            "Data Structures using C", "Data Structures using C++",
+            "Data Structures through C", "Data Structures through Java"
+        ],
+        "keywords": [
+            r"\bdata\s+structures?\b", r"\balgorithms?\b", r"\bbinary\s+search\s+tree\b", r"\blinked\s+lists?\b",
+            r"\bstack\b", r"\bqueue\b", r"\bavl\s+trees?\b", r"\bheap\b", r"\bgraphs?\b", r"\bdepth-first\s+search\b",
+            r"\bbreadth-first\s+search\b", r"\bbfs\b", r"\bdfs\b", r"\bdijkstra\b", r"\bdynamic\s+programming\b",
+            r"\btime\s+complexity\b", r"\bspace\s+complexity\b", r"\bbig-?o\b", r"\bquicksort\b", r"\bmergesort\b",
+            r"\brecursion\b", r"\bhash\s+tables?\b", r"\bpseudocode\b", r"\bnode\b", r"\bhead\b",
+            r"\btraversal\b", r"\binsertion\b", r"\bdeletion\b", r"\bsparse\s+matrix\b", r"\bpolynomial\b",
+            r"\blinear\s+data\s+structures?\b", r"\bnon-?linear\s+data\s+structures?\b", r"\bauxiliary\s+space\b",
+            r"\bunderflow\b", r"\boverflow\b"
+        ],
+        "strong_markers": [
+            r"\bdata\s+structures?\b", r"\bdsa\b", r"\blinked\s+lists?\b",
+            r"\b(singly|doubly|circular)\s+linked\s+lists?\b", r"\bbinary\s+(?:search\s+)?trees?\b",
+            r"\bbst\b", r"\bavl\s+trees?\b", r"\bsparse\s+matrix\b", r"\bpolynomial\s+representation\b",
+            r"\btime\s+complexity\b", r"\bspace\s+complexity\b", r"\bquicksort\b", r"\bmergesort\b"
+        ],
+        "common_subtopics": [
+            ("Linked Lists (Singly, Doubly, Circular)", [r"\blinked\s+lists?\b", r"\bsingly\s+linked\b", r"\bdoubly\s+linked\b", r"\bcircular\s+linked\b", r"\bnode\b"]),
+            ("Linear Data Structures (Stacks & Queues)", [r"\bstack\b", r"\bqueue\b", r"\bpush\b", r"\bpop\b", r"\bdequeue\b", r"\benqueue\b"]),
+            ("Trees & Binary Search Trees (BST)", [r"\bbinary\s+tree\b", r"\bbst\b", r"\bavl\b", r"\btraversal\b", r"\binorder\b", r"\bpreorder\b", r"\bpostorder\b"]),
+            ("Graphs & Pathfinding Algorithms", [r"\bgraph\b", r"\bbfs\b", r"\bdfs\b", r"\bdijkstra\b", r"\bspanning\s+tree\b", r"\bkruskal\b", r"\bprims\b"]),
+            ("Sorting & Searching Techniques", [r"\bquicksort\b", r"\bmergesort\b", r"\bbinary\s+search\b", r"\blinear\s+search\b", r"\bheapsort\b", r"\bbubble\s+sort\b"]),
+            ("Sparse Matrices & Polynomials", [r"\bsparse\s+matrix\b", r"\bpolynomial\b", r"\b2d\s+array\b"]),
+            ("Asymptotic Complexity & Analysis", [r"\bbig-?o\b", r"\btime\s+complexity\b", r"\bspace\s+complexity\b", r"\bauxiliary\s+space\b", r"\btheta\b", r"\bomega\b"]),
+        ]
+    },
     {
         "subject": "Python Programming",
         "category": "Programming Languages",
         "suggested_title": "Python Programming Assessment",
         "icon": "python",
+        "aliases": ["Python", "Python 3", "Python Programming Language"],
         "keywords": [
             r"\bpython\b", r"\bdef\s+\w+\s*\(", r"\belif\b", r"\b__init__\b", r"\bself\.\w+",
             r"\bpandas\b", r"\bnumpy\b", r"\blambda\b", r"\blist\s+comprehension\b", r"\bpip\b",
@@ -37,6 +74,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Programming Languages",
         "suggested_title": "Java Programming Assessment",
         "icon": "java",
+        "aliases": ["Java", "Core Java", "Java Programming Language", "OOP through Java"],
         "keywords": [
             r"\bjava\b", r"\bpublic\s+class\b", r"\bpublic\s+static\s+void\s+main\b",
             r"\bSystem\.out\.println\b", r"\bjvm\b", r"\bjdk\b", r"\bjre\b", r"\bextends\b",
@@ -60,18 +98,23 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Programming Languages",
         "suggested_title": "C / C++ Programming Assessment",
         "icon": "cpp",
+        "aliases": ["C Programming", "C++ Programming", "C Language", "C++ Language", "Advanced C"],
         "keywords": [
             r"\bc\+\+\b", r"\bcpp\b", r"#include\s*<stdio\.h>", r"#include\s*<iostream>",
             r"\bstd::cout\b", r"\bstd::cin\b", r"\bprintf\b", r"\bscanf\b", r"\bpointers\b",
             r"\bmalloc\b", r"\bfree\s*\(", r"\bstruct\b", r"\bdestructor\b", r"\boperator\s*[\+\-\*\/]\b",
             r"\bvirtual\s+function\b", r"\btemplate\s*<", r"\bstd::vector\b", r"\bstd::string\b", r"\bnamespace\b"
         ],
-        "strong_markers": [r"#include\s*<iostream>", r"#include\s*<stdio\.h>", r"\bstd::cout\b", r"\bprintf\s*\(", r"\bpointers\b"],
+        "strong_markers": [
+            r"#include\s*<[a-z0-9_.]+>", r"\bstd::cout\b", r"\bstd::cin\b", r"\bc\+\+\b",
+            r"\bcpp\b", r"\bnamespace\s+\w+", r"\bvirtual\s+(?:void|int|bool|class)\b",
+            r"\btemplate\s*<", r"\bstd::vector\b", r"\bconstexpr\b"
+        ],
         "common_subtopics": [
             ("Pointers & Dynamic Memory", [r"\bpointer\b", r"\bmalloc\b", r"\bfree\b", r"\baddress\b", r"\bmemory\s+allocation\b"]),
             ("Structures & Unions", [r"\bstruct\b", r"\bunion\b", r"\btypedef\b"]),
             ("Object-Oriented C++", [r"\bclass\b", r"\bconstructor\b", r"\bdestructor\b", r"\binheritance\b", r"\bvirtual\b"]),
-            ("Standard Template Library (STL)", [r"\bvector\b", r"\biterator\b", r"\bmap\b", r"\bstack\b", r"\bqueue\b", r"\balgorithm\b"]),
+            ("Standard Template Library (STL)", [r"\bstd::vector\b", r"\bstd::map\b", r"\bstd::queue\b", r"\bstd::stack\b", r"\bstl\b", r"\biterator\b"]),
         ]
     },
     {
@@ -79,6 +122,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Core Computer Science",
         "suggested_title": "Operating Systems Assessment",
         "icon": "cpu",
+        "aliases": ["OS", "Operating System Concepts", "Operating Systems Principles"],
         "keywords": [
             r"\boperating\s+system\b", r"\bprocess\s+management\b", r"\bdeadlock\b", r"\bpaging\b",
             r"\bvirtual\s+memory\b", r"\bsemaphore\b", r"\bmutex\b", r"\bcpu\s+scheduling\b",
@@ -102,6 +146,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Database Systems",
         "suggested_title": "Database Management Systems Assessment",
         "icon": "database",
+        "aliases": ["DBMS", "Database Management Systems", "Database Systems", "SQL", "RDBMS"],
         "keywords": [
             r"\bdatabase\b", r"\bdbms\b", r"\brdbms\b", r"\bsql\b", r"\bselect\s+.*\s+from\b",
             r"\bprimary\s+key\b", r"\bforeign\s+key\b", r"\bnormalization\b", r"\b1nf\b", r"\b2nf\b",
@@ -124,6 +169,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Systems & Networking",
         "suggested_title": "Computer Networks Assessment",
         "icon": "network",
+        "aliases": ["CN", "Networking", "Computer Network", "Data Communications & Networking"],
         "keywords": [
             r"\bcomputer\s+networks?\b", r"\bosi\s+model\b", r"\btcp/ip\b", r"\budp\b", r"\bpacket\b",
             r"\brouting\b", r"\bsubnetting\b", r"\bcidr\b", r"\bip\s+address\b", r"\bipv4\b", r"\bipv6\b",
@@ -142,32 +188,11 @@ DOMAIN_KNOWLEDGE_BASE = [
         ]
     },
     {
-        "subject": "Data Structures & Algorithms",
-        "category": "Core Computer Science",
-        "suggested_title": "Data Structures & Algorithms Assessment",
-        "icon": "binary",
-        "keywords": [
-            r"\bdata\s+structures?\b", r"\balgorithms?\b", r"\bbinary\s+search\s+tree\b", r"\blinked\s+list\b",
-            r"\bstack\b", r"\bqueue\b", r"\bavl\s+tree\b", r"\bheap\b", r"\bgraph\b", r"\bdepth-first\s+search\b",
-            r"\bbreadth-first\s+search\b", r"\bbfs\b", r"\bdfs\b", r"\bdijkstra\b", r"\bdynamic\s+programming\b",
-            r"\btime\s+complexity\b", r"\bspace\s+complexity\b", r"\bbig-?o\b", r"\bquicksort\b", r"\bmergesort\b",
-            r"\brecursion\b", r"\bhash\s+table\b", r"\bpseudocode\b"
-        ],
-        "strong_markers": [r"\bbinary\s+search\s+tree\b", r"\btime\s+complexity\b", r"\blinked\s+list\b", r"\bquicksort\b", r"\bavl\s+tree\b"],
-        "common_subtopics": [
-            ("Linear Data Structures (Lists, Stacks, Queues)", [r"\blinked\s+list\b", r"\bstack\b", r"\bqueue\b", r"\bdeque\b"]),
-            ("Trees & BSTs", [r"\bbinary\s+tree\b", r"\bbst\b", r"\bavl\b", r"\btraversal\b", r"\binorder\b", r"\bpreorder\b", r"\bpostorder\b"]),
-            ("Graphs & Pathfinding", [r"\bgraph\b", r"\bbfs\b", r"\bdfs\b", r"\bdijkstra\b", r"\bspanning\s+tree\b", r"\bkruskal\b", r"\bprims\b"]),
-            ("Sorting & Searching", [r"\bquicksort\b", r"\bmergesort\b", r"\bbinary\s+search\b", r"\bheapsort\b", r"\bbubble\s+sort\b"]),
-            ("Algorithm Design Paradigms", [r"\bdynamic\s+programming\b", r"\bgreedy\b", r"\bdivide\s+and\s+conquer\b", r"\bbacktracking\b"]),
-            ("Asymptotic Complexity & Analysis", [r"\bbig-?o\b", r"\btime\s+complexity\b", r"\bspace\s+complexity\b", r"\btheta\b", r"\bomega\b"]),
-        ]
-    },
-    {
         "subject": "Machine Learning & Artificial Intelligence",
         "category": "Data Science & AI",
         "suggested_title": "Machine Learning & AI Assessment",
         "icon": "brain",
+        "aliases": ["Machine Learning", "Artificial Intelligence", "AI", "ML", "Deep Learning"],
         "keywords": [
             r"\bmachine\s+learning\b", r"\bartificial\s+intelligence\b", r"\bdeep\s+learning\b",
             r"\bsupervised\s+learning\b", r"\bunsupervised\s+learning\b", r"\breinforcement\s+learning\b",
@@ -190,6 +215,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Software Engineering",
         "suggested_title": "Software Engineering Assessment",
         "icon": "code",
+        "aliases": ["Software Engineering", "SE", "Software Design & Architecture"],
         "keywords": [
             r"\bsoftware\s+engineering\b", r"\bsdlc\b", r"\bwaterfall\s+model\b", r"\bagile\b",
             r"\bscrum\b", r"\bsprint\b", r"\bdesign\s+patterns?\b", r"\bsingleton\b", r"\bfactory\s+pattern\b",
@@ -209,6 +235,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Security",
         "suggested_title": "Cybersecurity Assessment",
         "icon": "shield",
+        "aliases": ["Cybersecurity", "Network Security", "Cryptography", "Information Security"],
         "keywords": [
             r"\bcybersecurity\b", r"\binformation\s+security\b", r"\bcryptography\b", r"\bencryption\b",
             r"\bdecryption\b", r"\baes\b", r"\brsa\b", r"\bhashing\b", r"\bsha-?256\b", r"\bpublic\s+key\b",
@@ -228,6 +255,7 @@ DOMAIN_KNOWLEDGE_BASE = [
         "category": "Web Development",
         "suggested_title": "Web Development Assessment",
         "icon": "globe",
+        "aliases": ["Web Technologies", "Web Development", "JavaScript", "HTML & CSS"],
         "keywords": [
             r"\bhtml5?\b", r"\bcss3?\b", r"\bjavascript\b", r"\bdom\b", r"\bflexbox\b", r"\bcss\s+grid\b",
             r"\bresponsive\s+design\b", r"\breact\b", r"\bnode\.?js\b", r"\bexpress\b", r"\brest\s+api\b",
@@ -245,26 +273,106 @@ DOMAIN_KNOWLEDGE_BASE = [
 ]
 
 
+def extract_document_header_subject(text: str) -> Optional[Dict[str, str]]:
+    """
+    Scans the first 1-3 pages of the PDF for explicit course title / subject declarations.
+    E.g.
+    'DATA STRUCTURES Regulation: R24' -> 'Data Structures'
+    'UNIT 2 -LINKED LISTS' -> 'Linked Lists'
+    'Course: Operating Systems' -> 'Operating Systems'
+    """
+    sample = text[:3500].replace("\r", "\n")
+    lines = [l.strip() for l in sample.split("\n") if l.strip()]
+
+    subject_cand = None
+    unit_cand = None
+
+    for line in lines[:30]:
+        # Filter out page markers and faculty credentials
+        if re.search(r"--- Page \d+ ---|Mrs\.|Mr\.|Dr\.|Prof\.|Dist\.|Asst|Professor|MVGRCE|College|University|Institute", line, re.IGNORECASE):
+            continue
+
+        # Pattern 1: "DATA STRUCTURES Regulation: R24" or "OPERATING SYSTEMS Course Code: CS201"
+        m_reg = re.match(r"^([A-Za-z\s&/]{4,50})\s+(?:Regulation|Reg|Code|Course\s+Code|Paper\s+Code|Branch)[:\s].*$", line, re.IGNORECASE)
+        if m_reg and not subject_cand:
+            s = m_reg.group(1).strip()
+            if len(s.split()) >= 1 and len(s) >= 4:
+                subject_cand = s.title()
+                continue
+
+        # Pattern 2: "Subject: Data Structures" or "Course: Operating Systems"
+        m_sub = re.match(r"^(?:Subject|Course|Course\s+Title|Title)\s*[:\-]\s*([A-Za-z0-9\s&/]{4,50})$", line, re.IGNORECASE)
+        if m_sub and not subject_cand:
+            s = m_sub.group(1).strip()
+            if len(s) >= 4:
+                subject_cand = s.title()
+                continue
+
+        # Pattern 3: "UNIT 2 -LINKED LISTS" or "Unit II: Stacks and Queues" or "Chapter 3: Deadlocks"
+        m_unit = re.match(r"^(?:Unit|Chapter|Module|Part)\s+[0-9IVXLCDM]+\s*[:\-–—\s]\s*([A-Za-z0-9\s&/\-_,]{3,60})$", line, re.IGNORECASE)
+        if m_unit and not unit_cand:
+            u = m_unit.group(1).strip().strip(":#-–— ")
+            if len(u) >= 3:
+                unit_cand = u.title()
+                continue
+
+        # Pattern 4: Prominent uppercase title on its own line: "DATA STRUCTURES", "OPERATING SYSTEMS"
+        if line.isupper() and 1 <= len(line.split()) <= 5 and not subject_cand:
+            if not re.search(r"\b(?:UNIT|CHAPTER|MODULE|PAGE|NOTE|AUTHOR|REGULATION|SLIDE|DEPT|DEPARTMENT|LC\s*\d+)\b", line):
+                clean_title = re.sub(r"[^A-Za-z\s&]", "", line).strip()
+                if len(clean_title) >= 4:
+                    subject_cand = clean_title.title()
+
+    if subject_cand or unit_cand:
+        return {"subject": subject_cand, "unit": unit_cand}
+    return None
+
+
+def clean_extracted_heading(heading: str) -> str:
+    """Cleans raw PDF line into human-readable course topic."""
+    h = heading.strip().strip(":#-–—• ")
+    # Remove LC markers like "LC1: ", "LC 4: "
+    h = re.sub(r"^LC\s*\d+\s*[:\-\.]\s*", "", h, flags=re.IGNORECASE)
+    # Remove unit/chapter prefixes like "Unit 2 - ", "Unit II: "
+    h = re.sub(r"^(?:Unit|Chapter|Module|Section)\s+[0-9IVXLCDM]+\s*[:\-\–—\.]\s*", "", h, flags=re.IGNORECASE)
+    # Remove regulation markers
+    h = re.sub(r"\bRegulation:\s*R\d+\b", "", h, flags=re.IGNORECASE)
+    h = re.sub(r"^R\d+\s*\d*$", "", h, flags=re.IGNORECASE)
+    return h.strip().strip(":#-–—• ")
+
+
+def is_junk_heading(h: str) -> bool:
+    """Filters out formulas, code fragments, regulations, and noise."""
+    s = h.strip()
+    if len(s) < 4 or len(s) > 85:
+        return True
+    if re.search(r"\b(?:Regulation|R\d+|Professor|Prof\.|Dr\.|Faculty|Department|Dept\.|College|University|Institute|MVGRCE|Page\s*\d+|Slide\s*\d+)\b", s, re.IGNORECASE):
+        return True
+    if re.search(r"[{};]|#include|\b(?:struct|malloc|sizeof|printf|scanf|NULL|return|void|int|float|char)\b", s):
+        return True
+    if re.search(r"-->|->|==|!=|[=><]\s*\d+", s):
+        return True
+    if re.match(r"^R\s*\d+", s):
+        return True
+    return False
+
+
 def extract_document_headings(text: str) -> List[str]:
     """Extracts top chapter, section, and topic titles from PDF text."""
     headings = []
     lines = text.replace("\r", "\n").split("\n")
-    pattern = re.compile(
-        r"^(?:(?:Chapter|Unit|Module|Section|Topic|Part)\s+[\d\w\.\-]+[:\s]+|[A-Z0-9\s\-_]{4,45}:|#{1,3}\s+)(.+)$",
-        re.IGNORECASE
-    )
     for line in lines:
         line_s = line.strip()
-        if len(line_s) > 8 and len(line_s) < 80:
-            m = pattern.match(line_s)
+        if len(line_s) > 4 and len(line_s) < 95:
+            m = re.match(r"^(?:(?:Chapter|Unit|Module|Section|Topic|Part|LC\s*\d+)\s*[:\-\.\s\d\w]+[:\s]+)(.+)$", line_s, re.IGNORECASE)
             if m:
-                h = m.group(1).strip().strip(":#- ")
-                if h and len(h) > 3 and h not in headings:
-                    headings.append(h)
-            elif line_s.isupper() and len(line_s.split()) in [2, 3, 4, 5]:
-                title = line_s.title()
-                if title not in headings:
-                    headings.append(title)
+                cand = clean_extracted_heading(m.group(1))
+                if cand and not is_junk_heading(cand) and cand not in headings:
+                    headings.append(cand)
+            elif line_s.isupper() and 2 <= len(line_s.split()) <= 6:
+                cand = clean_extracted_heading(line_s.title())
+                if cand and not is_junk_heading(cand) and cand not in headings:
+                    headings.append(cand)
         if len(headings) >= 8:
             break
     return headings
@@ -289,26 +397,39 @@ def detect_pdf_topic(text: str, filename: str = "") -> Dict[str, Any]:
             "filename": filename
         }
 
-    # Combined text sample for analysis (first 10,000 characters is plenty for subject detection)
+    # Combined text samples for analysis
     sample_text = text[:12000].lower()
     full_sample = text[:30000].lower()
     filename_lower = filename.lower()
+    header_info = extract_document_header_subject(text)
 
-    best_domain = None
-    best_score = 0.0
     domain_scores: List[Dict[str, Any]] = []
 
     for domain in DOMAIN_KNOWLEDGE_BASE:
         score = 0.0
         matched_keywords = []
 
+        # 0. Header match bonus (strong authoritative signal from document itself)
+        if header_info and header_info.get("subject"):
+            h_subj = header_info["subject"].lower()
+            d_subj = domain["subject"].lower()
+            aliases = [a.lower() for a in domain.get("aliases", [])]
+            if h_subj in d_subj or d_subj in h_subj or any(a in h_subj or h_subj in a for a in aliases):
+                score += 80.0
+                matched_keywords.append(f"header:{header_info['subject']}")
+
         # 1. Filename match weight (very strong hint)
         fn_clean = re.sub(r"[^a-z0-9]", " ", filename_lower)
         subj_words = [w.lower() for w in domain["subject"].split() if len(w) > 2]
+        aliases = [a.lower() for a in domain.get("aliases", [])]
         for w in subj_words:
             if re.search(rf"\b{re.escape(w)}\b", fn_clean):
                 score += 35.0
                 matched_keywords.append(f"filename:{w}")
+        for a in aliases:
+            if re.search(rf"\b{re.escape(a)}\b", fn_clean):
+                score += 45.0
+                matched_keywords.append(f"filename_alias:{a}")
 
         # 2. Strong markers match
         for marker_regex in domain.get("strong_markers", []):
@@ -325,6 +446,15 @@ def detect_pdf_topic(text: str, filename: str = "") -> Dict[str, Any]:
                 clean_kw = kw_regex.replace(r"\b", "").replace(r"\s+", " ").strip()
                 if clean_kw not in matched_keywords:
                     matched_keywords.append(clean_kw)
+
+        # 4. Anti-Collision Rule:
+        # C/C++ syntax penalty if Data Structures markers dominate the material.
+        # Data structure implementations in C (struct node, malloc, printf) do not make
+        # the course a C programming course; the course subject is Data Structures & Algorithms.
+        if domain["subject"] == "C / C++ Programming":
+            dsa_count = len(re.findall(r"\b(data\s+structures?|linked\s+lists?|binary\s+tree|stack|queue|traversal|bst)\b", sample_text, re.IGNORECASE))
+            if dsa_count >= 8:
+                score *= 0.25
 
         if score > 0:
             domain_scores.append({
@@ -345,16 +475,20 @@ def detect_pdf_topic(text: str, filename: str = "") -> Dict[str, Any]:
 
         # Detect specific subtopics present in this document
         detected_topics: List[str] = []
+        # If we have an explicit unit header from the document (e.g. "Linked Lists"), include it first
+        if header_info and header_info.get("unit"):
+            detected_topics.append(header_info["unit"])
+
         for subtopic_title, subtopic_patterns in domain.get("common_subtopics", []):
             found = False
             for pat in subtopic_patterns:
                 if re.search(pat, full_sample, re.IGNORECASE):
                     found = True
                     break
-            if found:
+            if found and subtopic_title not in detected_topics:
                 detected_topics.append(subtopic_title)
 
-        # Supplement with document headings if available
+        # Supplement with clean document headings if available
         doc_headings = extract_document_headings(text)
         for h in doc_headings:
             if h not in detected_topics and len(detected_topics) < 6:
@@ -363,6 +497,12 @@ def detect_pdf_topic(text: str, filename: str = "") -> Dict[str, Any]:
         if not detected_topics:
             detected_topics = [f"{domain['subject']} Core Concepts", "Key Definitions & Terminology"]
 
+        # Formulate suggested title tailored with unit if present
+        if header_info and header_info.get("unit"):
+            suggested_title = f"{domain['subject']} - {header_info['unit']} Assessment"
+        else:
+            suggested_title = domain["suggested_title"]
+
         # Craft concise summary
         topic_preview = ", ".join(detected_topics[:3])
         summary = f"This document contains educational content on {domain['subject']} ({domain['category']}), emphasizing {topic_preview}."
@@ -370,7 +510,7 @@ def detect_pdf_topic(text: str, filename: str = "") -> Dict[str, Any]:
         return {
             "subject": domain["subject"],
             "category": domain["category"],
-            "suggested_title": domain["suggested_title"],
+            "suggested_title": suggested_title,
             "topics": detected_topics[:6],
             "summary": summary,
             "confidence": round(confidence, 2),
@@ -378,21 +518,23 @@ def detect_pdf_topic(text: str, filename: str = "") -> Dict[str, Any]:
             "filename": filename
         }
 
-    # Fallback: Extract topic from document headings or title
-    headings = extract_document_headings(text)
-    primary_topic = headings[0] if headings else "Technical & Academic Studies"
-    clean_title = re.sub(r"\.[a-zA-Z0-9]+$", "", filename).replace("_", " ").replace("-", " ").title()
-    subject_title = clean_title if len(clean_title) > 3 and clean_title.lower() != "test" else primary_topic
+    # Fallback if no predefined domain matched: Dynamically build subject from document header or filename
+    subject_title = (header_info and header_info.get("subject")) or "Academic Course Material"
+    unit_title = header_info and header_info.get("unit")
+    suggested = f"{subject_title} Assessment" if not unit_title else f"{subject_title} - {unit_title} Assessment"
 
-    topics_list = headings[:5] if headings else [primary_topic, "Document Analysis & Key Concepts"]
+    doc_headings = extract_document_headings(text)
+    topics_list = ([unit_title] if unit_title else []) + [h for h in doc_headings if h != unit_title]
+    if not topics_list:
+        topics_list = [f"{subject_title} Core Concepts"]
 
     return {
         "subject": subject_title,
         "category": "Academic Course Material",
-        "suggested_title": f"{subject_title} Assessment",
-        "topics": topics_list,
-        "summary": f"Uploaded course document covering topics such as {', '.join(topics_list[:3])}.",
-        "confidence": 0.65,
-        "is_matched": False,
+        "suggested_title": suggested,
+        "topics": topics_list[:6],
+        "summary": f"Uploaded course document covering {subject_title}, emphasizing {', '.join(topics_list[:3])}.",
+        "confidence": 0.85 if header_info else 0.65,
+        "is_matched": True if header_info else False,
         "filename": filename
     }

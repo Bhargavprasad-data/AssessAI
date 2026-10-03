@@ -68,6 +68,27 @@ def test_detect_pdf_topic_unit():
     assert os_result["subject"] == "Operating Systems"
     assert os_result["category"] == "Core Computer Science"
 
+    # Data Structures & Algorithms with C implementation code
+    dsa_text = """
+    DATA STRUCTURES Regulation: R24
+    UNIT 2 -LINKED LISTS
+    A linked list is a linear data structure where elements are not stored at contiguous memory locations.
+    struct node {
+        int data;
+        struct node *next;
+    };
+    struct node *newnode = (struct node*)malloc(sizeof(struct node));
+    printf("Memory allocated");
+    free(newnode);
+    Double Linked List and Circular Linked List operations: insertion, deletion, traversal.
+    """
+    dsa_result = detect_pdf_topic(dsa_text, "R24_Unit_2.pdf")
+    assert dsa_result["subject"] == "Data Structures & Algorithms"
+    assert dsa_result["category"] == "Core Computer Science"
+    assert dsa_result["is_matched"] is True
+    assert "Linked Lists" in dsa_result["topics"]
+    assert "Data Structures & Algorithms - Linked Lists Assessment" in dsa_result["suggested_title"]
+
 
 @pytest.mark.asyncio
 async def test_pdf_topic_upload_endpoint(client: AsyncClient, db_session: AsyncSession):
