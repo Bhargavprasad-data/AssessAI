@@ -129,7 +129,7 @@ export const AssessmentBuilder: React.FC = () => {
   const DRAFT_STORAGE_KEY = 'assessai_assessment_builder_draft';
 
   // Load questions for all selected materials (stable callback with in-flight guard)
-  const loadQuestionsForSelectedMaterials = useCallback(async (targetJobId?: string | null, targetMatIds?: string[]) => {
+  const loadQuestionsForSelectedMaterials = useCallback(async (targetJobId?: string | null, targetMatIds?: string[], shouldReplace: boolean = false) => {
     if (isFetchingQuestionsRef.current) return;
 
     const matIds = targetMatIds && targetMatIds.length > 0 ? targetMatIds : Array.from(selectedMaterialIdsRef.current);
@@ -148,23 +148,29 @@ export const AssessmentBuilder: React.FC = () => {
         body: JSON.stringify(payload),
       });
       if (qList && qList.length > 0) {
-        setQuestions(prev => {
-          if (prev.length === 0) return qList;
-          const existingIds = new Set(prev.map(q => q.id));
-          const toAdd = qList.filter(q => !existingIds.has(q.id));
-          return toAdd.length === 0 ? prev : [...prev, ...toAdd];
-        });
-        setSelectedQuestionIds(prev => {
-          const next = new Set(prev);
-          let changed = false;
-          qList.forEach((q: Question) => {
-            if (!next.has(q.id)) {
-              next.add(q.id);
-              changed = true;
-            }
+        if (shouldReplace || !!targetJobId || !!effectiveJobId) {
+          // Strictly set questions to match the generated job/requested count
+          setQuestions(qList);
+          setSelectedQuestionIds(new Set(qList.map(q => q.id)));
+        } else {
+          setQuestions(prev => {
+            if (prev.length === 0) return qList;
+            const existingIds = new Set(prev.map(q => q.id));
+            const toAdd = qList.filter(q => !existingIds.has(q.id));
+            return toAdd.length === 0 ? prev : [...prev, ...toAdd];
           });
-          return changed ? next : prev;
-        });
+          setSelectedQuestionIds(prev => {
+            const next = new Set(prev);
+            let changed = false;
+            qList.forEach((q: Question) => {
+              if (!next.has(q.id)) {
+                next.add(q.id);
+                changed = true;
+              }
+            });
+            return changed ? next : prev;
+          });
+        }
       }
     } catch (err: any) {
       console.warn('Could not load questions for materials:', err);
@@ -451,7 +457,7 @@ export const AssessmentBuilder: React.FC = () => {
         setJobStatus(res.status);
         if (res.status === 'completed') {
           clearInterval(interval);
-          await loadQuestionsForSelectedMaterials(jobId);
+          await loadQuestionsForSelectedMaterials(res.job_id || jobId, undefined, true);
           setActiveTab('questions');
           setSuccess(`Successfully generated ${res.valid_count || ''} questions across all selected PDFs!`);
         } else if (res.status === 'failed') {
@@ -607,10 +613,7 @@ export const AssessmentBuilder: React.FC = () => {
     // 3. Mark as verified
     setVerifiedMaterialIds(prev => new Set(prev).add(confirmedMat.id));
 
-    // 4. Preload any existing questions from library
-    loadQuestionsForSelectedMaterials(null, [confirmedMat.id]);
-
-    // 5. Toast & notification
+    // 4. Toast & notification
     setSuccess(`Subject "${confirmedMat.detected_subject || 'Document'}" confirmed! ${confirmedMat.filename} added to Exam Pool.`);
 
     // 6. Advance verification queue if multiple PDFs were uploaded
@@ -674,8 +677,6 @@ export const AssessmentBuilder: React.FC = () => {
     });
     setSelectedMaterialIds(prev => new Set(prev).add(mat.id));
     setVerifiedMaterialIds(prev => new Set(prev).add(mat.id));
-    // Immediately fetch any existing questions for this material into the question pool
-    loadQuestionsForSelectedMaterials(null, [mat.id]);
   };
 
   // Delete material permanently from library & database
@@ -813,6 +814,10 @@ export const AssessmentBuilder: React.FC = () => {
     setJobError(null);
 
     const count = typeof requestedCount === 'number' ? requestedCount : 15;
+    // Immediately clear stale questions from previous generation/draft
+    setQuestions([]);
+    setSelectedQuestionIds(new Set());
+
     try {
       const res = await apiFetch<any>('/api/teacher/materials/generate-multiple', {
         method: 'POST',
@@ -1017,8 +1022,8 @@ export const AssessmentBuilder: React.FC = () => {
           <button
             onClick={() => {
               setActiveTab('questions');
-              if (questions.length === 0 && selectedMaterialIds.size > 0) {
-                loadQuestionsForSelectedMaterials();
+              if (questions.length === 0 && jobIdRef.current) {
+                loadQuestionsForSelectedMaterials(jobIdRef.current, undefined, true);
               }
             }}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
@@ -1638,12 +1643,30 @@ export const AssessmentBuilder: React.FC = () => {
       {activeTab === 'questions' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between bg-white dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-white/10 mb-4">
-            <span className="text-xs text-slate-700 dark:text-slate-300">
-              Selected <strong className="text-slate-900 dark:text-white">{selectedQuestionIds.size}</strong> of {questions.length} questions for assessment pool.
-            </span>
+            <div className="flex items-center space-x-3">
+              <span className="text-xs text-slate-700 dark:text-slate-300">
+                Selected <strong className="text-slate-900 dark:text-white">{selectedQuestionIds.size}</strong> of {questions.length} questions for assessment pool.
+              </span>
+              {questions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to clear all questions from the question pool?')) {
+                      setQuestions([]);
+                      setSelectedQuestionIds(new Set());
+                      setJobId(null);
+                      setJobStatus(null);
+                    }
+                  }}
+                  className="text-[11px] text-rose-500 hover:text-rose-600 underline font-semibold cursor-pointer"
+                >
+                  Clear Pool
+                </button>
+              )}
+            </div>
             <button
               onClick={() => setActiveTab('config')}
-              className="py-2 px-4 rounded-xl bg-brand-600 text-white text-xs font-bold flex items-center space-x-1.5"
+              className="py-2 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer"
             >
               <span>Next: Settings & Publish</span>
               <ArrowRight className="w-3.5 h-3.5" />
