@@ -84,11 +84,13 @@ async def generate_multiple_materials_background(
             if mcqs:
                 # Open a fresh short-lived session only for DB writes
                 async with AsyncSessionLocal() as write_session:
-                    # Remove prior unassigned questions for this material
+                    # Remove prior unassigned questions for this material that have no attempt answers or servings
                     await write_session.execute(
                         delete(Question).where(
                             Question.material_id == mat_id,
-                            ~Question.id.in_(select(AssessmentQuestion.question_id))
+                            ~Question.id.in_(select(AssessmentQuestion.question_id)),
+                            ~Question.id.in_(select(AttemptAnswer.question_id)),
+                            ~Question.id.in_(select(AttemptQuestionServing.question_id))
                         )
                     )
                     await write_session.commit()
@@ -538,16 +540,31 @@ async def delete_all_course_materials(
 
     mat_ids = [m.id for m in materials]
 
-    # Delete all associated questions, jobs, and serving links
+    # Decouple and retire questions associated with these materials without destroying attempt history
     q_stmt = select(Question.id).where(Question.material_id.in_(mat_ids))
     q_ids = (await db.scalars(q_stmt)).all()
 
     if q_ids:
-        await db.execute(delete(AttemptQuestionServing).where(AttemptQuestionServing.question_id.in_(q_ids)))
-        await db.execute(delete(AttemptAnswer).where(AttemptAnswer.question_id.in_(q_ids)))
-        await db.execute(update(Attempt).where(Attempt.current_question_id.in_(q_ids)).values(current_question_id=None))
-        await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(q_ids)))
-        await db.execute(delete(Question).where(Question.id.in_(q_ids)))
+        answered_q_ids = set((await db.scalars(
+            select(AttemptAnswer.question_id).where(AttemptAnswer.question_id.in_(q_ids))
+        )).all())
+        served_q_ids = set((await db.scalars(
+            select(AttemptQuestionServing.question_id).where(AttemptQuestionServing.question_id.in_(q_ids))
+        )).all())
+        locked_q_ids = answered_q_ids.union(served_q_ids)
+
+        now = datetime.now(timezone.utc)
+        if locked_q_ids:
+            await db.execute(
+                update(Question)
+                .where(Question.id.in_(list(locked_q_ids)))
+                .values(material_id=None, retired_at=now)
+            )
+
+        deletable_q_ids = [qid for qid in q_ids if qid not in locked_q_ids]
+        if deletable_q_ids:
+            await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
+            await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
 
     await db.execute(delete(AIGenerationJob).where(AIGenerationJob.material_id.in_(mat_ids)))
 
@@ -604,22 +621,29 @@ async def delete_course_material(
     q_ids = (await db.scalars(q_stmt)).all()
 
     if q_ids:
-        # 2. Delete AttemptQuestionServing forensic references
-        await db.execute(delete(AttemptQuestionServing).where(AttemptQuestionServing.question_id.in_(q_ids)))
-        # 3. Delete AttemptAnswer references
-        await db.execute(delete(AttemptAnswer).where(AttemptAnswer.question_id.in_(q_ids)))
-        # 4. Nullify attempt current_question_id if pointing to any of these
-        await db.execute(
-            update(Attempt)
-            .where(Attempt.current_question_id.in_(q_ids))
-            .values(current_question_id=None)
-        )
-        # 5. Delete AssessmentQuestion links
-        await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(q_ids)))
-        # 6. Delete the questions themselves
-        await db.execute(delete(Question).where(Question.id.in_(q_ids)))
+        # Decouple and retire questions referenced in student attempts to keep scorecards intact
+        answered_q_ids = set((await db.scalars(
+            select(AttemptAnswer.question_id).where(AttemptAnswer.question_id.in_(q_ids))
+        )).all())
+        served_q_ids = set((await db.scalars(
+            select(AttemptQuestionServing.question_id).where(AttemptQuestionServing.question_id.in_(q_ids))
+        )).all())
+        locked_q_ids = answered_q_ids.union(served_q_ids)
 
-    # 7. Delete all AI Generation Jobs for these materials
+        now = datetime.now(timezone.utc)
+        if locked_q_ids:
+            await db.execute(
+                update(Question)
+                .where(Question.id.in_(list(locked_q_ids)))
+                .values(material_id=None, retired_at=now)
+            )
+
+        deletable_q_ids = [qid for qid in q_ids if qid not in locked_q_ids]
+        if deletable_q_ids:
+            await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
+            await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
+
+    # Delete all AI Generation Jobs for these materials
     await db.execute(delete(AIGenerationJob).where(AIGenerationJob.material_id.in_(mat_ids)))
 
     # 8. Delete physical files from storage provider

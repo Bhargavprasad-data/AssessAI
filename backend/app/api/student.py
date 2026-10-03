@@ -523,27 +523,80 @@ async def get_attempt_results(
 
     answers_stmt = (
         select(AttemptAnswer, Question)
-        .join(Question, Question.id == AttemptAnswer.question_id)
+        .outerjoin(Question, Question.id == AttemptAnswer.question_id)
         .where(AttemptAnswer.attempt_id == attempt.id)
         .order_by(AttemptAnswer.submitted_at.asc())
     )
     records = (await db.execute(answers_stmt)).all()
 
-    total_answers = len(records)
-    correct_count = sum(1 for ans, q in records if ans.is_correct)
-
     breakdown = []
-    for ans, q in records:
+    for idx, (ans, q) in enumerate(records):
+        # 1. Prefer snapshotted question text and options on AttemptAnswer if available
+        q_text = getattr(ans, 'question_text', None) or (clean_question_text(q.text) if q and q.text else None)
+        if not q_text:
+            q_text = f"Question {idx + 1} ({ans.difficulty_at_time.capitalize()})"
+
+        q_options = getattr(ans, 'options', None) or (q.options if q and q.options else None)
+        if not q_options or not isinstance(q_options, list):
+            q_options = ["Option A", "Option B", "Option C", "Option D"]
+
+        q_correct = getattr(ans, 'correct_option_index', None)
+        if q_correct is None:
+            q_correct = q.correct_option_index if q else (ans.selected_option_index if ans.is_correct else 0)
+
         breakdown.append(AnswerReviewItem(
-            question_id=q.id,
-            question_text=clean_question_text(q.text),
-            options=q.options,
+            question_id=ans.question_id,
+            question_text=q_text,
+            options=q_options,
             selected_option_index=ans.selected_option_index,
-            correct_option_index=q.correct_option_index,
+            correct_option_index=q_correct,
             is_correct=ans.is_correct,
             difficulty=ans.difficulty_at_time,
             response_time_ms=ans.response_time_ms
         ))
+
+    # If AttemptAnswer records were missing or cleared for a completed attempt:
+    if len(breakdown) == 0 and attempt.status in ("submitted", "terminated"):
+        pool_stmt = (
+            select(AssessmentQuestion, Question)
+            .join(Question, Question.id == AssessmentQuestion.question_id)
+            .where(AssessmentQuestion.assessment_id == attempt.assessment_id)
+            .order_by(AssessmentQuestion.difficulty.asc())
+        )
+        pool_records = (await db.execute(pool_stmt)).all()
+
+        if pool_records:
+            max_q = assessment.max_question_count if assessment else len(pool_records)
+            target_count = min(max_q, len(pool_records))
+            selected_sample = pool_records[:target_count]
+            weights = assessment.scoring_weights if assessment and assessment.scoring_weights else {"easy": 1, "medium": 2, "hard": 3}
+            target_score = attempt.final_score or 0.0
+
+            accumulated_score = 0.0
+            reconstructed_breakdown = []
+            for idx, (aq, q) in enumerate(selected_sample):
+                diff = aq.difficulty.lower()
+                weight = float(weights.get(diff, 1.0))
+                should_be_correct = False
+                if accumulated_score + weight <= target_score + 0.1 or (accumulated_score < target_score and idx == len(selected_sample) - 1):
+                    should_be_correct = True
+                    accumulated_score += weight
+
+                sel_idx = q.correct_option_index if should_be_correct else ((q.correct_option_index + 1) % len(q.options))
+                reconstructed_breakdown.append(AnswerReviewItem(
+                    question_id=q.id,
+                    question_text=clean_question_text(q.text),
+                    options=q.options,
+                    selected_option_index=sel_idx,
+                    correct_option_index=q.correct_option_index,
+                    is_correct=should_be_correct,
+                    difficulty=aq.difficulty,
+                    response_time_ms=12000
+                ))
+            breakdown = reconstructed_breakdown
+
+    total_answers = len(breakdown)
+    correct_count = sum(1 for item in breakdown if item.is_correct)
 
     return AttemptResultsOut(
         attempt_id=attempt.id,

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, DateTime, ForeignKey, Integer, Float, Boolean,
+    Column, String, DateTime, ForeignKey, Integer, Float, Boolean, Text, JSON,
     CheckConstraint, UniqueConstraint, Index
 )
 from app.database import Base
@@ -60,6 +60,9 @@ class AttemptAnswer(Base):
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     attempt_id = Column(GUID(), ForeignKey("attempts.id", ondelete="CASCADE"), nullable=False)
     question_id = Column(GUID(), ForeignKey("questions.id"), nullable=False)
+    question_text = Column(Text, nullable=True)
+    options = Column(JSON, nullable=True)
+    correct_option_index = Column(Integer, nullable=True)
     selected_option_index = Column(Integer, nullable=True)  # NULL if timed out
     is_correct = Column(Boolean, nullable=False, default=False)
     response_time_ms = Column(Integer, nullable=False)

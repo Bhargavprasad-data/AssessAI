@@ -9,7 +9,7 @@ class Question(Base):
     __tablename__ = "questions"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    material_id = Column(GUID(), ForeignKey("course_materials.id", ondelete="CASCADE"), nullable=False, index=True)
+    material_id = Column(GUID(), ForeignKey("course_materials.id", ondelete="SET NULL"), nullable=True, index=True)
     job_id = Column(GUID(), nullable=True, index=True)
     text = Column(Text, nullable=False)
     options = Column(JSON, nullable=False)  # List of 4 strings

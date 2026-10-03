@@ -80,14 +80,19 @@ export const ExamResults: React.FC = () => {
   // Compute stats
   const stats = useMemo(() => {
     if (!results) return null;
-    const total = results.total_answers || 0;
-    const correct = results.correct_answers || 0;
-    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const total = results.total_answers || (results.answers_breakdown?.length) || 0;
+    const correct = results.correct_answers !== undefined && results.correct_answers !== null && results.correct_answers > 0
+      ? results.correct_answers
+      : (results.answers_breakdown?.filter(q => q.is_correct).length ?? 0);
+    const accuracy = total > 0
+      ? Math.round((correct / total) * 100)
+      : (results.final_score > 0 ? Math.min(100, Math.round((results.final_score / (Math.max(1, total || 5) * 3)) * 100)) : 0);
 
     // Total and avg duration
     let durationFormatted = 'N/A';
+    let diffMs = 0;
     if (results.started_at && results.submitted_at) {
-      const diffMs = new Date(results.submitted_at).getTime() - new Date(results.started_at).getTime();
+      diffMs = new Date(results.submitted_at).getTime() - new Date(results.started_at).getTime();
       if (diffMs > 0) {
         const mins = Math.floor(diffMs / 60000);
         const secs = Math.floor((diffMs % 60000) / 1000);
@@ -95,12 +100,12 @@ export const ExamResults: React.FC = () => {
       }
     }
 
-    const avgTimeMs = results.answers_breakdown && results.answers_breakdown.length > 0
+    const avgTimeMs = results.answers_breakdown && results.answers_breakdown.length > 0 && results.answers_breakdown.some(a => (a.response_time_ms || 0) > 0)
       ? Math.round(
           results.answers_breakdown.reduce((acc, a) => acc + (a.response_time_ms || 0), 0) /
           results.answers_breakdown.length
         )
-      : 0;
+      : (diffMs > 0 && total > 0 ? Math.round(diffMs / total) : 0);
     const avgTimeSec = (avgTimeMs / 1000).toFixed(1);
 
     // Performance grade

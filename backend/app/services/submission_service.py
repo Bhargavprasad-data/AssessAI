@@ -12,6 +12,7 @@ from app.models.serving import AttemptQuestionServing
 from app.services.adaptive_engine import (
     is_response_fast, update_adaptive_counters, select_next_adaptive_question
 )
+from app.ai.cleaner import clean_question_text
 
 
 async def calculate_final_score(session: AsyncSession, attempt: Attempt, assessment: Assessment) -> float:
@@ -227,6 +228,9 @@ async def submit_answer_atomically(
         id=uuid.uuid4(),
         attempt_id=attempt.id,
         question_id=question_id,
+        question_text=clean_question_text(current_q.text) if current_q and current_q.text else None,
+        options=current_q.options if current_q else None,
+        correct_option_index=current_q.correct_option_index if current_q else None,
         selected_option_index=final_selected_index,
         is_correct=is_correct,
         response_time_ms=response_time_ms,
