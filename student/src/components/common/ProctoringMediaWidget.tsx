@@ -139,8 +139,8 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
   const anyOffline = !isCameraActive || !isMicActive || !isScreenSharing;
 
   // Find unauthorized objects
-  const hasPhone = detectedItems.some((d) => isPhoneDetectionItem(d.class, d.score));
-  const hasBook = detectedItems.some((d) => isBookOrSecondaryScreen(d.class, d.score));
+  const hasPhone = detectedItems.some((d) => isPhoneDetectionItem(d.class, d.score, d.bbox));
+  const hasBook = detectedItems.some((d) => isBookOrSecondaryScreen(d.class, d.score, d.bbox));
 
   return (
     <div

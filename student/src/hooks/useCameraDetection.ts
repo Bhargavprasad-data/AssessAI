@@ -10,32 +10,58 @@ export interface DetectedItem {
   bbox: [number, number, number, number]; // [x, y, width, height]
 }
 
-export function isPhoneDetectionItem(itemClass: string, score: number): boolean {
+export function isPhoneDetectionItem(
+  itemClass: string,
+  score: number,
+  bbox?: [number, number, number, number]
+): boolean {
   const c = itemClass.toLowerCase().trim();
-  // Direct phone / mobile terms
+
+  // Filter out tiny background artifacts / specks (real held phone is at least 35x45 px and 2200 px² in 640x480)
+  if (bbox && bbox.length >= 4) {
+    const w = bbox[2];
+    const h = bbox[3];
+    const area = w * h;
+    if (w < 35 || h < 45 || area < 2200) {
+      return false;
+    }
+  }
+
+  // Direct mobile phone / telephone classes only (score >= 0.36 reliably rejects background clutter)
   if (c === 'cell phone' || c === 'cellphone' || c === 'telephone' || c === 'phone' || c === 'mobile') {
-    return score >= 0.20;
+    return score >= 0.36;
   }
-  // Remote controls are the most common misclassification for smartphone backs, casings, and screens
+
+  // Remote controls: only if high confidence (>= 0.50) to prevent keyboard/remote false alarms
   if (c === 'remote') {
-    return score >= 0.22;
+    return score >= 0.50;
   }
-  // Clocks / watches (e.g. phones with prominent circular camera rings or watch/timer on display)
-  if (c === 'clock') {
-    return score >= 0.28;
-  }
-  // Computer mouse or handheld gadgets held in air
-  if (c === 'mouse') {
-    return score >= 0.35;
-  }
+
+  // Note: 'mouse' and 'clock' are explicitly NOT matched to avoid false alarms from student's desk mouse or wall clocks
   return false;
 }
 
-export function isBookOrSecondaryScreen(itemClass: string, score: number): boolean {
+export function isBookOrSecondaryScreen(
+  itemClass: string,
+  score: number,
+  bbox?: [number, number, number, number]
+): boolean {
   const c = itemClass.toLowerCase().trim();
-  if (c === 'book' || c === 'laptop' || c === 'tablet') {
-    return score >= 0.28;
+
+  if (bbox && bbox.length >= 4) {
+    const w = bbox[2];
+    const h = bbox[3];
+    if (w < 60 || h < 60 || (w * h) < 4000) {
+      return false;
+    }
   }
+
+  // Unauthorized physical textbooks/notebooks brought into camera view
+  if (c === 'book') {
+    return score >= 0.48;
+  }
+
+  // Do NOT match 'laptop' here since candidates writing exams on laptops have their laptop base in camera frame
   return false;
 }
 
@@ -656,12 +682,12 @@ export function useCameraDetection({
                   }
                 }
 
-                // Step 3: High-Sensitivity COCO-SSD Object Detection for Mobile Phones and Unauthorized Materials
+                // Step 3: Precise COCO-SSD Object Detection for Mobile Phones and Unauthorized Materials
                 const cocoModel = cocoModelRef.current;
 
                 if (cocoModel) {
                   try {
-                    const predictions = await cocoModel.detect(liveVideo, 15, 0.18);
+                    const predictions = await cocoModel.detect(liveVideo, 10, 0.25);
                     const validDetections: DetectedItem[] = predictions.map((p) => ({
                       class: p.class.toLowerCase(),
                       score: p.score,
@@ -671,18 +697,15 @@ export function useCameraDetection({
 
                     // A. Mobile Phone / Electronic Device Detection
                     const phoneDetection = validDetections.find((d) =>
-                      isPhoneDetectionItem(d.class, d.score)
+                      isPhoneDetectionItem(d.class, d.score, d.bbox)
                     );
 
                     if (phoneDetection) {
-                      // Fast hit accumulator: high-confidence detections trigger immediately; lower ones take 2 frames
-                      phoneConsecutiveFramesRef.current = Math.min(
-                        6,
-                        phoneConsecutiveFramesRef.current + (phoneDetection.score >= 0.38 ? 2 : 1)
-                      );
+                      phoneConsecutiveFramesRef.current += 1;
                       phoneAbsentConsecutiveRef.current = 0;
 
-                      if (phoneConsecutiveFramesRef.current >= 2) {
+                      // Sustained detection: at least 3 consecutive frames (~360-450ms) confirms presence without 1-frame jitter
+                      if (phoneConsecutiveFramesRef.current >= 3) {
                         setMobileWarningActive(true);
 
                         if (isActive) {
@@ -702,32 +725,29 @@ export function useCameraDetection({
                     } else {
                       phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
                       phoneAbsentConsecutiveRef.current += 1;
-                      // Keep warning active for 6 absent cycles to prevent flickering
-                      if (phoneAbsentConsecutiveRef.current >= 6) {
+                      // Clear warning once phone is absent for 4 consecutive frames
+                      if (phoneAbsentConsecutiveRef.current >= 4) {
                         phoneIncidentActiveRef.current = false;
                         setMobileWarningActive(false);
                       }
                     }
 
-                    // B. Study Material / Book / Secondary Screen Detection
+                    // B. Study Material / Book Detection
                     const bookDetection = validDetections.find((d) =>
-                      isBookOrSecondaryScreen(d.class, d.score)
+                      isBookOrSecondaryScreen(d.class, d.score, d.bbox)
                     );
 
                     if (bookDetection && !phoneDetection) {
-                      bookConsecutiveFramesRef.current = Math.min(
-                        6,
-                        bookConsecutiveFramesRef.current + (bookDetection.score >= 0.40 ? 2 : 1)
-                      );
+                      bookConsecutiveFramesRef.current += 1;
                       bookAbsentConsecutiveRef.current = 0;
 
-                      if (bookConsecutiveFramesRef.current >= 2) {
+                      if (bookConsecutiveFramesRef.current >= 3) {
                         if (isActive) {
                           bookIncidentActiveRef.current = true;
                           triggerViolation(
                             'unauthorized_object',
                             {
-                              object: bookDetection.class === 'laptop' ? 'Secondary Screen / Laptop' : 'Study Material / Book',
+                              object: 'Study Material / Book',
                               detected_class: bookDetection.class,
                               confidence: Math.round(bookDetection.score * 100),
                               bbox: bookDetection.bbox,
@@ -739,7 +759,7 @@ export function useCameraDetection({
                     } else {
                       bookConsecutiveFramesRef.current = Math.max(0, bookConsecutiveFramesRef.current - 1);
                       bookAbsentConsecutiveRef.current += 1;
-                      if (bookAbsentConsecutiveRef.current >= 6) {
+                      if (bookAbsentConsecutiveRef.current >= 4) {
                         bookIncidentActiveRef.current = false;
                       }
                     }
