@@ -67,3 +67,36 @@ async def test_teacher_materials_upload_single_and_multiple(client: AsyncClient,
     assert list_resp.status_code == 200
     library_mat_ids = [m["id"] for m in list_resp.json()]
     assert mat_id not in library_mat_ids
+
+
+@pytest.mark.asyncio
+async def test_delete_all_course_materials(client: AsyncClient, db_session: AsyncSession):
+    now = datetime.now(timezone.utc)
+    teacher = User(id=uuid.uuid4(), name="Teacher All", email=f"teacher_{uuid.uuid4().hex[:6]}@school.com", password_hash="hash", role="teacher", created_at=now)
+    db_session.add(teacher)
+    await db_session.commit()
+
+    token = create_access_token(data={"sub": str(teacher.id), "role": "teacher", "type": "access"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    pdf_bytes = create_sample_pdf_bytes("Testing delete all course materials.")
+    files_payload = [
+        ("files", ("all1.pdf", pdf_bytes, "application/pdf")),
+        ("files", ("all2.pdf", pdf_bytes, "application/pdf"))
+    ]
+    resp = await client.post("/api/teacher/materials/upload", files=files_payload, headers=headers)
+    assert resp.status_code == 200
+    mat_ids = [m["id"] for m in resp.json()["materials"]]
+    assert len(mat_ids) == 2
+
+    # Call DELETE /api/teacher/materials
+    del_all_resp = await client.delete("/api/teacher/materials", headers=headers)
+    assert del_all_resp.status_code == 200
+    data = del_all_resp.json()
+    assert data["deleted_count"] == 2
+
+    # Verify library is empty for this teacher
+    list_resp = await client.get("/api/teacher/materials", headers=headers)
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()) == 0
+

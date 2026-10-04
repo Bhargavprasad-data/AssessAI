@@ -4,11 +4,14 @@ import csv
 import json
 import uuid
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Request
-from sqlalchemy import select, func, and_, or_, desc, delete, update
+from sqlalchemy import select, func, and_, or_, desc, delete, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.database import get_db, AsyncSessionLocal
@@ -533,8 +536,15 @@ async def delete_all_course_materials(
     current_teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
+    # Ensure PostgreSQL allows material_id to be NULL
+    try:
+        async with db.begin_nested():
+            await db.execute(text("ALTER TABLE questions ALTER COLUMN material_id DROP NOT NULL;"))
+    except Exception as alter_err:
+        logger.debug(f"Defensive DROP NOT NULL skipped/failed: {alter_err}")
+
     stmt = select(CourseMaterial).where(CourseMaterial.teacher_id == current_teacher.id)
-    materials = (await db.scalars(stmt)).all()
+    materials = list((await db.scalars(stmt)).all())
     if not materials:
         return {"message": "No materials to delete", "deleted_count": 0}
 
@@ -542,18 +552,23 @@ async def delete_all_course_materials(
 
     # Decouple and retire questions associated with these materials without destroying attempt history
     q_stmt = select(Question.id).where(Question.material_id.in_(mat_ids))
-    q_ids = (await db.scalars(q_stmt)).all()
+    q_ids = list((await db.scalars(q_stmt)).all())
 
+    now = datetime.now(timezone.utc)
     if q_ids:
+        # Collect all questions locked by any student attempt activity
         answered_q_ids = set((await db.scalars(
             select(AttemptAnswer.question_id).where(AttemptAnswer.question_id.in_(q_ids))
         )).all())
         served_q_ids = set((await db.scalars(
             select(AttemptQuestionServing.question_id).where(AttemptQuestionServing.question_id.in_(q_ids))
         )).all())
-        locked_q_ids = answered_q_ids.union(served_q_ids)
+        current_q_ids = set((await db.scalars(
+            select(Attempt.current_question_id).where(Attempt.current_question_id.in_(q_ids))
+        )).all())
+        locked_q_ids = answered_q_ids | served_q_ids | current_q_ids
 
-        now = datetime.now(timezone.utc)
+        # Decouple and retire questions referenced in student attempts to keep scorecards intact
         if locked_q_ids:
             await db.execute(
                 update(Question)
@@ -561,20 +576,39 @@ async def delete_all_course_materials(
                 .values(material_id=None, retired_at=now)
             )
 
+        # For questions not linked to attempts, attempt clean removal with graceful fallback
         deletable_q_ids = [qid for qid in q_ids if qid not in locked_q_ids]
         if deletable_q_ids:
-            await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
-            await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
+            try:
+                async with db.begin_nested():
+                    await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
+                    await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
+            except Exception as del_err:
+                logger.warning(f"Could not hard-delete unused questions, decoupling instead: {del_err}")
+                await db.execute(
+                    update(Question)
+                    .where(Question.id.in_(deletable_q_ids))
+                    .values(material_id=None, retired_at=now)
+                )
 
+    # Final guarantee: dissociate any questions referencing these materials so cascade deletion won't fail
+    await db.execute(
+        update(Question)
+        .where(Question.material_id.in_(mat_ids))
+        .values(material_id=None, retired_at=now)
+    )
+
+    # Delete all AI generation jobs referencing these materials
     await db.execute(delete(AIGenerationJob).where(AIGenerationJob.material_id.in_(mat_ids)))
 
+    # Delete physical files from storage
     storage = get_storage_provider()
     for m in materials:
         try:
             if m.storage_path:
                 await storage.delete_file(m.storage_path)
-        except Exception:
-            pass
+        except Exception as storage_err:
+            logger.warning(f"Could not delete storage file {m.storage_path}: {storage_err}")
         await db.delete(m)
 
     await db.commit()
@@ -588,6 +622,13 @@ async def delete_course_material(
     current_teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
+    # Ensure PostgreSQL allows material_id to be NULL
+    try:
+        async with db.begin_nested():
+            await db.execute(text("ALTER TABLE questions ALTER COLUMN material_id DROP NOT NULL;"))
+    except Exception as alter_err:
+        logger.debug(f"Defensive DROP NOT NULL skipped/failed: {alter_err}")
+
     material = await db.get(CourseMaterial, material_id)
     target_filename = None
     if filename and filename.strip():
@@ -618,8 +659,9 @@ async def delete_course_material(
 
     # 1. Fetch all question IDs for these material IDs
     q_stmt = select(Question.id).where(Question.material_id.in_(mat_ids))
-    q_ids = (await db.scalars(q_stmt)).all()
+    q_ids = list((await db.scalars(q_stmt)).all())
 
+    now = datetime.now(timezone.utc)
     if q_ids:
         # Decouple and retire questions referenced in student attempts to keep scorecards intact
         answered_q_ids = set((await db.scalars(
@@ -628,9 +670,11 @@ async def delete_course_material(
         served_q_ids = set((await db.scalars(
             select(AttemptQuestionServing.question_id).where(AttemptQuestionServing.question_id.in_(q_ids))
         )).all())
-        locked_q_ids = answered_q_ids.union(served_q_ids)
+        current_q_ids = set((await db.scalars(
+            select(Attempt.current_question_id).where(Attempt.current_question_id.in_(q_ids))
+        )).all())
+        locked_q_ids = answered_q_ids | served_q_ids | current_q_ids
 
-        now = datetime.now(timezone.utc)
         if locked_q_ids:
             await db.execute(
                 update(Question)
@@ -640,24 +684,38 @@ async def delete_course_material(
 
         deletable_q_ids = [qid for qid in q_ids if qid not in locked_q_ids]
         if deletable_q_ids:
-            await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
-            await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
+            try:
+                async with db.begin_nested():
+                    await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
+                    await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
+            except Exception as del_err:
+                logger.warning(f"Could not hard-delete unused questions, decoupling instead: {del_err}")
+                await db.execute(
+                    update(Question)
+                    .where(Question.id.in_(deletable_q_ids))
+                    .values(material_id=None, retired_at=now)
+                )
+
+    # Final guarantee: dissociate any questions referencing these materials so cascade deletion won't fail
+    await db.execute(
+        update(Question)
+        .where(Question.material_id.in_(mat_ids))
+        .values(material_id=None, retired_at=now)
+    )
 
     # Delete all AI Generation Jobs for these materials
     await db.execute(delete(AIGenerationJob).where(AIGenerationJob.material_id.in_(mat_ids)))
 
-    # 8. Delete physical files from storage provider
+    # Delete physical files from storage provider
     storage = get_storage_provider()
     for m in all_matching_mats:
         try:
             if m.storage_path:
                 await storage.delete_file(m.storage_path)
-        except Exception:
-            pass
-
-    # 9. Delete the course material records
-    for m in all_matching_mats:
+        except Exception as storage_err:
+            logger.warning(f"Could not delete storage file {m.storage_path}: {storage_err}")
         await db.delete(m)
+
     await db.commit()
     return {"message": "Course material deleted successfully", "id": str(material_id)}
 

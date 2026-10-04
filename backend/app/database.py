@@ -91,6 +91,23 @@ async def init_db():
 
         await conn.run_sync(sync_missing_columns)
 
+        def sync_schema_migrations(sync_conn):
+            dialect = sync_conn.dialect.name
+            if "postgres" in dialect:
+                try:
+                    sync_conn.execute(text("SAVEPOINT alter_mat_id"))
+                    sync_conn.execute(text("ALTER TABLE questions ALTER COLUMN material_id DROP NOT NULL;"))
+                    sync_conn.execute(text("RELEASE SAVEPOINT alter_mat_id"))
+                    logger.info("Auto-migrating: questions.material_id altered to DROP NOT NULL.")
+                except Exception as e:
+                    try:
+                        sync_conn.execute(text("ROLLBACK TO SAVEPOINT alter_mat_id"))
+                    except Exception:
+                        pass
+                    logger.debug(f"PostgreSQL migration notice (material_id drop not null): {e}")
+
+        await conn.run_sync(sync_schema_migrations)
+
     # Ensure authoritative admin accounts exist and credentials are valid
     async with AsyncSessionLocal() as session:
         try:
