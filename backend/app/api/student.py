@@ -20,7 +20,7 @@ from app.schemas.attempt import (
 from app.api.deps import require_student
 from app.ai.cleaner import clean_question_text
 from app.services.submission_service import (
-    submit_answer_atomically, serve_first_question_if_needed
+    submit_answer_atomically, serve_first_question_if_needed, calculate_final_score
 )
 from app.services.proctoring_service import record_device_switch
 
