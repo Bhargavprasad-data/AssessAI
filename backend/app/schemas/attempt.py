@@ -21,6 +21,10 @@ class AttemptJoinRequest(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=255)
 
 
+class HeartbeatRequest(BaseModel):
+    device_id: Optional[str] = Field("default_device", max_length=255)
+
+
 class CurrentQuestionOut(BaseModel):
     attempt_id: uuid.UUID
     question_id: uuid.UUID

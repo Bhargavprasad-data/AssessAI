@@ -58,6 +58,8 @@ export const ExamSession: React.FC = () => {
   );
 
   const setupVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hasCheckedAttemptRef = useRef<boolean>(false);
+  const lastCameraRetryTimeRef = useRef<number>(0);
 
   useEffect(() => {
     localStorage.setItem('proctor_device_id', deviceIdRef.current);
@@ -343,9 +345,10 @@ export const ExamSession: React.FC = () => {
     return () => clearInterval(interval);
   }, [attemptId, hasConsented, terminatedReason]);
 
-  // Auto-resume active exam on page refresh
+  // Auto-resume active exam on page refresh (runs once on mount per assessment)
   useEffect(() => {
-    if (!assessmentId) return;
+    if (!assessmentId || hasCheckedAttemptRef.current) return;
+    hasCheckedAttemptRef.current = true;
 
     let isMounted = true;
     async function checkExistingAttempt() {
@@ -386,10 +389,8 @@ export const ExamSession: React.FC = () => {
                 setCurrentQuestion(res.current_question);
                 setHasConsented(true);
                 setTerminatedReason(null);
-                if (!isCameraActive || !cameraStream) {
-                  requestCamera().catch((e) => console.warn('Could not re-acquire camera on attempt resume:', e));
-                  requestMicrophone().catch((e) => console.warn('Could not re-acquire mic on attempt resume:', e));
-                }
+                requestCamera().catch((e) => console.warn('Could not re-acquire camera on attempt resume:', e));
+                requestMicrophone().catch((e) => console.warn('Could not re-acquire mic on attempt resume:', e));
               }
             } catch (err: any) {
               console.warn('Could not auto-resume ongoing attempt:', err);
@@ -407,7 +408,7 @@ export const ExamSession: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [assessmentId, navigate, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
+  }, [assessmentId, navigate, requestCamera, requestMicrophone]);
 
   // Join / Start Attempt after consent
   const handleJoinAttempt = async () => {
@@ -517,9 +518,13 @@ export const ExamSession: React.FC = () => {
     }
   }, [assessmentId, isCameraActive, cameraStream, requestCamera, requestMicrophone]);
 
-  // Real-time camera watchdog: Ensure physical camera remains connected during active exam
+  // Real-time camera watchdog: Ensure physical camera remains connected during active exam (throttled)
   useEffect(() => {
     if (hasConsented && attemptId && !isCameraActive) {
+      const now = Date.now();
+      if (now - lastCameraRetryTimeRef.current < 6000) return;
+      lastCameraRetryTimeRef.current = now;
+
       requestCamera().then(() => {
         requestMicrophone().catch(() => {});
       }).catch((e) => {

@@ -15,7 +15,7 @@ from app.models.proctoring import Violation
 from app.schemas.assessment import AssessmentOut
 from app.schemas.attempt import (
     AttemptJoinRequest, CurrentQuestionOut, AnswerSubmitRequest,
-    AnswerSubmitResponse, AttemptResultsOut, AnswerReviewItem
+    AnswerSubmitResponse, AttemptResultsOut, AnswerReviewItem, HeartbeatRequest
 )
 from app.api.deps import require_student
 from app.ai.cleaner import clean_question_text
@@ -446,7 +446,8 @@ async def submit_answer(
 @router.post("/attempts/{attempt_id}/heartbeat")
 async def send_heartbeat(
     attempt_id: uuid.UUID,
-    device_id: str,
+    payload: Optional[HeartbeatRequest] = None,
+    device_id: Optional[str] = None,
     current_student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -454,12 +455,14 @@ async def send_heartbeat(
     if not attempt or attempt.student_id != current_student.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found.")
 
+    target_device_id = (payload.device_id if payload and payload.device_id else device_id) or "default_device"
+
     now = datetime.now(timezone.utc)
     attempt.last_heartbeat_at = now
 
     assessment = await db.get(Assessment, attempt.assessment_id)
-    if attempt.active_device_id != device_id:
-        await record_device_switch(db, attempt, assessment, device_id)
+    if attempt.active_device_id != target_device_id:
+        await record_device_switch(db, attempt, assessment, target_device_id)
     else:
         await db.commit()
 

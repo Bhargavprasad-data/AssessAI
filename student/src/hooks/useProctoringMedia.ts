@@ -6,6 +6,10 @@ export interface UseProctoringMediaOptions {
 
 export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
   const { onViolation } = options;
+  const onViolationRef = useRef(onViolation);
+  useEffect(() => {
+    onViolationRef.current = onViolation;
+  }, [onViolation]);
 
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
@@ -51,7 +55,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
           setIsCameraActive(false);
           setCameraStream(null);
           cameraStreamRef.current = null;
-          onViolation?.('webcam_disconnected', { reason: 'track_ended' });
+          onViolationRef.current?.('webcam_disconnected', { reason: 'track_ended' });
         };
       });
       return stream;
@@ -68,7 +72,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       setIsCameraActive(false);
       return null;
     }
-  }, [onViolation]);
+  }, []);
 
   // 2. Request Microphone Permission & Setup Audio Analyser
   const requestMicrophone = useCallback(async () => {
@@ -91,7 +95,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
           setIsMicActive(false);
           setMicStream(null);
           micStreamRef.current = null;
-          onViolation?.('mic_disabled', { reason: 'track_ended' });
+          onViolationRef.current?.('mic_disabled', { reason: 'track_ended' });
         };
       });
 
@@ -128,7 +132,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
             if (!audioIncidentActiveRef.current && !noiseSpikeTimerRef.current) {
               noiseSpikeTimerRef.current = setTimeout(() => {
                 audioIncidentActiveRef.current = true;
-                onViolation?.('audio_spike', { level, description: 'Loud background noise or speech detected' });
+                onViolationRef.current?.('audio_spike', { level, description: 'Loud background noise or speech detected' });
                 noiseSpikeTimerRef.current = null;
               }, 1200);
             }
@@ -167,7 +171,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       setIsMicActive(false);
       return null;
     }
-  }, [onViolation]);
+  }, []);
 
   // 3. Request Screen Sharing Permission
   const requestScreenShare = useCallback(async () => {
@@ -193,7 +197,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
           setIsScreenSharing(false);
           setScreenStream(null);
           screenStreamRef.current = null;
-          onViolation?.('screen_share_stopped', { reason: 'user_ended_sharing' });
+          onViolationRef.current?.('screen_share_stopped', { reason: 'user_ended_sharing' });
         };
       });
       return stream;
@@ -207,7 +211,7 @@ export function useProctoringMedia(options: UseProctoringMediaOptions = {}) {
       setIsScreenSharing(false);
       return null;
     }
-  }, [onViolation]);
+  }, []);
 
   // 4. Request All Hardware sequentially
   const requestAllPermissions = useCallback(async () => {
