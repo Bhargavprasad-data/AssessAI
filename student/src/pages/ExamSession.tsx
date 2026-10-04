@@ -1380,6 +1380,25 @@ export const ExamSession: React.FC = () => {
         </div>
       )}
 
+      {/* Mobile Phone Detected Warning Banner */}
+      {mobileWarningActive && !terminatedReason && (
+        <div className="mb-6 p-4 rounded-2xl bg-rose-500/20 border-2 border-rose-500 text-rose-900 dark:text-rose-100 text-xs flex items-center justify-between shadow-2xl animate-pulse relative z-30 backdrop-blur-md ring-2 ring-rose-500/50">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-rose-500/30 text-rose-600 dark:text-rose-300 border border-rose-500/50 flex-shrink-0">
+              <Smartphone className="w-5 h-5 animate-bounce" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-rose-700 dark:text-rose-200">
+                ⚠️ Security Alert: Mobile Phone Detected!
+              </h4>
+              <p className="mt-0.5 text-rose-800 dark:text-rose-200 text-[11px] leading-relaxed font-semibold">
+                Close your mobile and please write your exam. Mobile devices and electronic gadgets are strictly prohibited during the assessment.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Face Mismatch Warning Banner */}
       {(faceMismatchActive || isFaceMismatch) && !terminatedReason && (
         <div className="mb-6 p-4 rounded-2xl bg-rose-500/15 border-2 border-rose-500/50 text-rose-900 dark:text-rose-200 text-xs flex items-center justify-between shadow-2xl animate-pulse relative z-30 backdrop-blur-md">

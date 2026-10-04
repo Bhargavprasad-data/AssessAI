@@ -4,7 +4,7 @@ import {
   CameraOff, MicOff, MonitorOff, Volume2, Activity,
   Minimize2, Maximize2, Smartphone, Eye
 } from 'lucide-react';
-import type { DetectedItem } from '../../hooks/useCameraDetection';
+import { isPhoneDetectionItem, isBookOrSecondaryScreen, type DetectedItem } from '../../hooks/useCameraDetection';
 
 interface ProctoringMediaWidgetProps {
   cameraStream: MediaStream | null;
@@ -139,15 +139,8 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
   const anyOffline = !isCameraActive || !isMicActive || !isScreenSharing;
 
   // Find unauthorized objects
-  const hasPhone = detectedItems.some((d) => {
-    const c = d.class.toLowerCase();
-    if (c === 'cell phone' || c === 'telephone' || c === 'remote') return d.score >= 0.45;
-    return false;
-  });
-  const hasBook = detectedItems.some((d) => {
-    const c = d.class.toLowerCase();
-    return (c === 'book' || c === 'laptop') && d.score >= 0.45;
-  });
+  const hasPhone = detectedItems.some((d) => isPhoneDetectionItem(d.class, d.score));
+  const hasBook = detectedItems.some((d) => isBookOrSecondaryScreen(d.class, d.score));
 
   return (
     <div
@@ -172,12 +165,12 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             }`} />
           </span>
           <span className="text-xs font-bold text-slate-200">
-            {personCount > 1
+            {mobileWarningActive || hasPhone
+              ? '⚠️ Mobile Detected!'
+              : personCount > 1
               ? '⚠️ Multiple Faces!'
               : isFaceMismatch
               ? '⚠️ Face Mismatch!'
-              : mobileWarningActive
-              ? '⚠️ Mobile Detected!'
               : 'Proctor Active'}
           </span>
 
@@ -278,8 +271,8 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             )}
 
             {/* AI Object Guard Warning Banner Overlay on Mobile Detection */}
-            {(mobileWarningActive || hasPhone) && personCount <= 1 && !isFaceMismatch && (
-              <div className="absolute bottom-0 inset-x-0 bg-rose-950/90 backdrop-blur-sm p-1.5 text-center border-t border-rose-500 flex items-center justify-center space-x-1.5 z-10">
+            {(mobileWarningActive || hasPhone) && personCount <= 1 && (
+              <div className="absolute bottom-0 inset-x-0 bg-rose-950/90 backdrop-blur-sm p-1.5 text-center border-t border-rose-500 flex items-center justify-center space-x-1.5 z-30">
                 <Smartphone className="w-3.5 h-3.5 text-rose-400 flex-shrink-0 animate-bounce" />
                 <span className="text-[10px] font-bold text-rose-200">
                   Warning: Mobile Phone Detected — Put device away

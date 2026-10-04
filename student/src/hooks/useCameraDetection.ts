@@ -10,6 +10,35 @@ export interface DetectedItem {
   bbox: [number, number, number, number]; // [x, y, width, height]
 }
 
+export function isPhoneDetectionItem(itemClass: string, score: number): boolean {
+  const c = itemClass.toLowerCase().trim();
+  // Direct phone / mobile terms
+  if (c === 'cell phone' || c === 'cellphone' || c === 'telephone' || c === 'phone' || c === 'mobile') {
+    return score >= 0.20;
+  }
+  // Remote controls are the most common misclassification for smartphone backs, casings, and screens
+  if (c === 'remote') {
+    return score >= 0.22;
+  }
+  // Clocks / watches (e.g. phones with prominent circular camera rings or watch/timer on display)
+  if (c === 'clock') {
+    return score >= 0.28;
+  }
+  // Computer mouse or handheld gadgets held in air
+  if (c === 'mouse') {
+    return score >= 0.35;
+  }
+  return false;
+}
+
+export function isBookOrSecondaryScreen(itemClass: string, score: number): boolean {
+  const c = itemClass.toLowerCase().trim();
+  if (c === 'book' || c === 'laptop' || c === 'tablet') {
+    return score >= 0.28;
+  }
+  return false;
+}
+
 export type FaceVerificationStatus =
   | 'no_camera'
   | 'initializing'
@@ -263,7 +292,6 @@ export function useCameraDetection({
   const lookingAwayIncidentActiveRef = useRef<boolean>(false);
   const lookingAwayConsecutiveFramesRef = useRef<number>(0);
   const lookingNormalConsecutiveRef = useRef<number>(0);
-  const cocoFrameCounterRef = useRef<number>(0);
 
   // Restore saved candidate face baseline from session if student reloaded
   useEffect(() => {
@@ -628,88 +656,95 @@ export function useCameraDetection({
                   }
                 }
 
-                // Step 3: Interleaved COCO-SSD Object Detection for Phones and Books (every alternate cycle)
-                cocoFrameCounterRef.current = (cocoFrameCounterRef.current + 1) % 2;
+                // Step 3: High-Sensitivity COCO-SSD Object Detection for Mobile Phones and Unauthorized Materials
                 const cocoModel = cocoModelRef.current;
 
-                if (isActive && cocoModel && cocoFrameCounterRef.current === 0) {
-                  const predictions = await cocoModel.detect(liveVideo, 10, 0.30);
-                  const validDetections: DetectedItem[] = predictions.map((p) => ({
-                    class: p.class.toLowerCase(),
-                    score: p.score,
-                    bbox: p.bbox,
-                  }));
-                  setDetectedItems(validDetections);
+                if (cocoModel) {
+                  try {
+                    const predictions = await cocoModel.detect(liveVideo, 15, 0.18);
+                    const validDetections: DetectedItem[] = predictions.map((p) => ({
+                      class: p.class.toLowerCase(),
+                      score: p.score,
+                      bbox: p.bbox,
+                    }));
+                    setDetectedItems(validDetections);
 
-                  // A. Mobile phone / Electronic device detection
-                  const phoneDetection = validDetections.find((d) => {
-                    const c = d.class.toLowerCase();
-                    return (c === 'cell phone' || c === 'telephone' || c === 'remote') && d.score >= 0.45;
-                  });
+                    // A. Mobile Phone / Electronic Device Detection
+                    const phoneDetection = validDetections.find((d) =>
+                      isPhoneDetectionItem(d.class, d.score)
+                    );
 
-                  if (phoneDetection) {
-                    phoneConsecutiveFramesRef.current += 1;
-                    phoneAbsentConsecutiveRef.current = 0;
-                    if (phoneConsecutiveFramesRef.current >= 2) {
-                      setMobileWarningActive(true);
-                      const now = Date.now();
-                      const lastPhoneTime = lastViolationTimeRef.current['mobile_detected'] || 0;
-                      if (!phoneIncidentActiveRef.current || now - lastPhoneTime >= 8000) {
-                        phoneIncidentActiveRef.current = true;
-                        lastViolationTimeRef.current['mobile_detected'] = now;
-                        triggerViolation(
-                          'mobile_detected',
-                          {
-                            object: 'Mobile Phone',
-                            detected_class: phoneDetection.class,
-                            confidence: Math.round(phoneDetection.score * 100),
-                            bbox: phoneDetection.bbox,
-                          },
-                          'Warning: Mobile phone detected. Close your mobile and please write your exam.'
-                        );
+                    if (phoneDetection) {
+                      // Fast hit accumulator: high-confidence detections trigger immediately; lower ones take 2 frames
+                      phoneConsecutiveFramesRef.current = Math.min(
+                        6,
+                        phoneConsecutiveFramesRef.current + (phoneDetection.score >= 0.38 ? 2 : 1)
+                      );
+                      phoneAbsentConsecutiveRef.current = 0;
+
+                      if (phoneConsecutiveFramesRef.current >= 2) {
+                        setMobileWarningActive(true);
+
+                        if (isActive) {
+                          phoneIncidentActiveRef.current = true;
+                          triggerViolation(
+                            'mobile_detected',
+                            {
+                              object: 'Mobile Phone',
+                              detected_class: phoneDetection.class,
+                              confidence: Math.round(phoneDetection.score * 100),
+                              bbox: phoneDetection.bbox,
+                            },
+                            'Warning: Mobile phone detected. Close your mobile and please write your exam.'
+                          );
+                        }
+                      }
+                    } else {
+                      phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
+                      phoneAbsentConsecutiveRef.current += 1;
+                      // Keep warning active for 6 absent cycles to prevent flickering
+                      if (phoneAbsentConsecutiveRef.current >= 6) {
+                        phoneIncidentActiveRef.current = false;
+                        setMobileWarningActive(false);
                       }
                     }
-                  } else {
-                    phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
-                    phoneAbsentConsecutiveRef.current += 1;
-                    if (phoneAbsentConsecutiveRef.current >= 4) {
-                      phoneIncidentActiveRef.current = false;
-                      setMobileWarningActive(false);
-                    }
-                  }
 
-                  // B. Study Material / Book / Secondary screen detection
-                  const bookDetection = validDetections.find((d) => {
-                    const c = d.class.toLowerCase();
-                    return (c === 'book' || c === 'laptop') && d.score >= 0.45;
-                  });
+                    // B. Study Material / Book / Secondary Screen Detection
+                    const bookDetection = validDetections.find((d) =>
+                      isBookOrSecondaryScreen(d.class, d.score)
+                    );
 
-                  if (bookDetection && !phoneDetection) {
-                    bookConsecutiveFramesRef.current += 1;
-                    bookAbsentConsecutiveRef.current = 0;
-                    if (bookConsecutiveFramesRef.current >= 2) {
-                      const now = Date.now();
-                      const lastBookTime = lastViolationTimeRef.current['unauthorized_object'] || 0;
-                      if (!bookIncidentActiveRef.current || now - lastBookTime >= 8000) {
-                        bookIncidentActiveRef.current = true;
-                        lastViolationTimeRef.current['unauthorized_object'] = now;
-                        triggerViolation(
-                          'unauthorized_object',
-                          {
-                            object: bookDetection.class === 'laptop' ? 'Secondary Screen / Laptop' : 'Study Material / Book',
-                            detected_class: bookDetection.class,
-                            confidence: Math.round(bookDetection.score * 100),
-                          },
-                          'Warning: Unauthorized material detected. Please remove it and write your exam.'
-                        );
+                    if (bookDetection && !phoneDetection) {
+                      bookConsecutiveFramesRef.current = Math.min(
+                        6,
+                        bookConsecutiveFramesRef.current + (bookDetection.score >= 0.40 ? 2 : 1)
+                      );
+                      bookAbsentConsecutiveRef.current = 0;
+
+                      if (bookConsecutiveFramesRef.current >= 2) {
+                        if (isActive) {
+                          bookIncidentActiveRef.current = true;
+                          triggerViolation(
+                            'unauthorized_object',
+                            {
+                              object: bookDetection.class === 'laptop' ? 'Secondary Screen / Laptop' : 'Study Material / Book',
+                              detected_class: bookDetection.class,
+                              confidence: Math.round(bookDetection.score * 100),
+                              bbox: bookDetection.bbox,
+                            },
+                            'Warning: Unauthorized material detected. Please remove it and write your exam.'
+                          );
+                        }
+                      }
+                    } else {
+                      bookConsecutiveFramesRef.current = Math.max(0, bookConsecutiveFramesRef.current - 1);
+                      bookAbsentConsecutiveRef.current += 1;
+                      if (bookAbsentConsecutiveRef.current >= 6) {
+                        bookIncidentActiveRef.current = false;
                       }
                     }
-                  } else {
-                    bookConsecutiveFramesRef.current = Math.max(0, bookConsecutiveFramesRef.current - 1);
-                    bookAbsentConsecutiveRef.current += 1;
-                    if (bookAbsentConsecutiveRef.current >= 4) {
-                      bookIncidentActiveRef.current = false;
-                    }
+                  } catch (objErr) {
+                    console.warn('COCO-SSD frame inference warning:', objErr);
                   }
                 }
               }
