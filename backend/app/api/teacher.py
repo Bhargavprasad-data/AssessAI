@@ -550,13 +550,12 @@ async def delete_all_course_materials(
 
     mat_ids = [m.id for m in materials]
 
-    # Decouple and retire questions associated with these materials without destroying attempt history
+    # Decouple questions associated with these materials without destroying attempt or assessment history
     q_stmt = select(Question.id).where(Question.material_id.in_(mat_ids))
     q_ids = list((await db.scalars(q_stmt)).all())
 
-    now = datetime.now(timezone.utc)
     if q_ids:
-        # Collect all questions locked by any student attempt activity
+        # Collect all questions locked by any student attempt activity or assigned to assessments
         answered_q_ids = set((await db.scalars(
             select(AttemptAnswer.question_id).where(AttemptAnswer.question_id.in_(q_ids))
         )).all())
@@ -566,36 +565,38 @@ async def delete_all_course_materials(
         current_q_ids = set((await db.scalars(
             select(Attempt.current_question_id).where(Attempt.current_question_id.in_(q_ids))
         )).all())
-        locked_q_ids = answered_q_ids | served_q_ids | current_q_ids
+        assigned_q_ids = set((await db.scalars(
+            select(AssessmentQuestion.question_id).where(AssessmentQuestion.question_id.in_(q_ids))
+        )).all())
+        locked_q_ids = answered_q_ids | served_q_ids | current_q_ids | assigned_q_ids
 
-        # Decouple and retire questions referenced in student attempts to keep scorecards intact
+        # Decouple questions referenced in student attempts or assessments without retiring them
         if locked_q_ids:
             await db.execute(
                 update(Question)
                 .where(Question.id.in_(list(locked_q_ids)))
-                .values(material_id=None, retired_at=now)
+                .values(material_id=None)
             )
 
-        # For questions not linked to attempts, attempt clean removal with graceful fallback
+        # For questions not linked to attempts or assessments, attempt clean removal with graceful fallback
         deletable_q_ids = [qid for qid in q_ids if qid not in locked_q_ids]
         if deletable_q_ids:
             try:
                 async with db.begin_nested():
-                    await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
                     await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
             except Exception as del_err:
                 logger.warning(f"Could not hard-delete unused questions, decoupling instead: {del_err}")
                 await db.execute(
                     update(Question)
                     .where(Question.id.in_(deletable_q_ids))
-                    .values(material_id=None, retired_at=now)
+                    .values(material_id=None)
                 )
 
     # Final guarantee: dissociate any questions referencing these materials so cascade deletion won't fail
     await db.execute(
         update(Question)
         .where(Question.material_id.in_(mat_ids))
-        .values(material_id=None, retired_at=now)
+        .values(material_id=None)
     )
 
     # Delete all AI generation jobs referencing these materials
@@ -661,9 +662,8 @@ async def delete_course_material(
     q_stmt = select(Question.id).where(Question.material_id.in_(mat_ids))
     q_ids = list((await db.scalars(q_stmt)).all())
 
-    now = datetime.now(timezone.utc)
     if q_ids:
-        # Decouple and retire questions referenced in student attempts to keep scorecards intact
+        # Decouple questions referenced in student attempts or assessments
         answered_q_ids = set((await db.scalars(
             select(AttemptAnswer.question_id).where(AttemptAnswer.question_id.in_(q_ids))
         )).all())
@@ -673,34 +673,36 @@ async def delete_course_material(
         current_q_ids = set((await db.scalars(
             select(Attempt.current_question_id).where(Attempt.current_question_id.in_(q_ids))
         )).all())
-        locked_q_ids = answered_q_ids | served_q_ids | current_q_ids
+        assigned_q_ids = set((await db.scalars(
+            select(AssessmentQuestion.question_id).where(AssessmentQuestion.question_id.in_(q_ids))
+        )).all())
+        locked_q_ids = answered_q_ids | served_q_ids | current_q_ids | assigned_q_ids
 
         if locked_q_ids:
             await db.execute(
                 update(Question)
                 .where(Question.id.in_(list(locked_q_ids)))
-                .values(material_id=None, retired_at=now)
+                .values(material_id=None)
             )
 
         deletable_q_ids = [qid for qid in q_ids if qid not in locked_q_ids]
         if deletable_q_ids:
             try:
                 async with db.begin_nested():
-                    await db.execute(delete(AssessmentQuestion).where(AssessmentQuestion.question_id.in_(deletable_q_ids)))
                     await db.execute(delete(Question).where(Question.id.in_(deletable_q_ids)))
             except Exception as del_err:
                 logger.warning(f"Could not hard-delete unused questions, decoupling instead: {del_err}")
                 await db.execute(
                     update(Question)
                     .where(Question.id.in_(deletable_q_ids))
-                    .values(material_id=None, retired_at=now)
+                    .values(material_id=None)
                 )
 
     # Final guarantee: dissociate any questions referencing these materials so cascade deletion won't fail
     await db.execute(
         update(Question)
         .where(Question.material_id.in_(mat_ids))
-        .values(material_id=None, retired_at=now)
+        .values(material_id=None)
     )
 
     # Delete all AI Generation Jobs for these materials

@@ -199,6 +199,7 @@ export async function apiFetch<T>(
     } else if (typeof parsedData === 'string' && parsedData.trim()) {
       errorDetail = parsedData;
     }
+    console.warn(`[API Error] ${options.method || 'GET'} ${url} (${response.status}):`, errorDetail);
     throw new Error(errorDetail);
   }
 

@@ -106,6 +106,18 @@ async def init_db():
                         pass
                     logger.debug(f"PostgreSQL migration notice (material_id drop not null): {e}")
 
+            # Un-retire any questions assigned to assessments
+            try:
+                sync_conn.execute(text("""
+                    UPDATE questions
+                    SET retired_at = NULL
+                    WHERE retired_at IS NOT NULL
+                    AND id IN (SELECT question_id FROM assessment_questions);
+                """))
+                logger.info("Auto-migrating: Un-retired active assessment questions.")
+            except Exception as e:
+                logger.debug(f"Assessment questions un-retire notice: {e}")
+
         await conn.run_sync(sync_schema_migrations)
 
     # Ensure authoritative admin accounts exist and credentials are valid

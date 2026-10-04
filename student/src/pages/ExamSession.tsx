@@ -385,6 +385,10 @@ export const ExamSession: React.FC = () => {
               });
 
               if (isMounted) {
+                if (res.status === 'submitted') {
+                  navigate(`/student/attempts/${res.attempt_id}/results`, { replace: true });
+                  return;
+                }
                 setAttemptId(res.attempt_id);
                 setCurrentQuestion(res.current_question);
                 setHasConsented(true);
@@ -436,6 +440,11 @@ export const ExamSession: React.FC = () => {
           device_id: deviceIdRef.current,
         }),
       });
+
+      if (res.status === 'submitted') {
+        navigate(`/student/attempts/${res.attempt_id}/results`, { replace: true });
+        return;
+      }
 
       setAttemptId(res.attempt_id);
       setCurrentQuestion(res.current_question);

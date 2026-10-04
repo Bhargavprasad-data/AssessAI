@@ -186,4 +186,19 @@ async def select_next_adaptive_question(
         if candidate:
             return candidate
 
+    # Fallback: ANY question linked to this assessment that hasn't been served
+    fallback_stmt = (
+        select(Question)
+        .join(AssessmentQuestion, AssessmentQuestion.question_id == Question.id)
+        .where(
+            AssessmentQuestion.assessment_id == assessment.id
+        )
+    )
+    if served_ids:
+        fallback_stmt = fallback_stmt.where(Question.id.not_in(served_ids))
+    fallback_q = (await session.execute(fallback_stmt.limit(1))).scalar_one_or_none()
+    if fallback_q:
+        fallback_q.retired_at = None
+        return fallback_q
+
     return None

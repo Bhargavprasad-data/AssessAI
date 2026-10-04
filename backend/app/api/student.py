@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func, and_, desc, case, delete
+from sqlalchemy import select, func, and_, desc, case, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -100,11 +100,17 @@ async def list_available_assessments(
         existing_status = existing_attempt.status if existing_attempt else None
         existing_id = str(existing_attempt.id) if existing_attempt else None
 
-        if existing_attempt and existing_attempt.status == "terminated" and ban is None:
-            # Student is unbanned/eligible to resume
-            existing_status = "in_progress"
-
         now_check = datetime.now(timezone.utc)
+        if existing_attempt:
+            if existing_attempt.status in ["in_progress", "disconnected"]:
+                started_at = existing_attempt.started_at
+                if started_at and started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                if started_at and (now_check - started_at).total_seconds() >= a.time_limit_seconds:
+                    existing_status = "submitted"
+            elif existing_attempt.status == "terminated" and ban is None:
+                # Student is unbanned/eligible to resume
+                existing_status = "in_progress"
         is_upcoming = False
         is_expired = False
         if a.scheduled_start_at:
@@ -171,7 +177,18 @@ async def join_assessment(
             detail=f"You are barred from this assessment due to a prior proctoring violation. Reason: {ban.reason}"
         )
 
-    # Pre-check: Ensure assessment has active questions in its pool before proceeding
+    # Pre-check & auto-heal: Ensure questions assigned to this assessment are unretired
+    await db.execute(
+        update(Question)
+        .where(
+            Question.id.in_(
+                select(AssessmentQuestion.question_id).where(AssessmentQuestion.assessment_id == assessment.id)
+            ),
+            Question.retired_at.is_not(None)
+        )
+        .values(retired_at=None)
+    )
+
     active_q_count = await db.scalar(
         select(func.count(AssessmentQuestion.question_id))
         .join(Question, Question.id == AssessmentQuestion.question_id)
@@ -180,6 +197,7 @@ async def join_assessment(
             Question.retired_at.is_(None)
         )
     ) or 0
+
     if active_q_count == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -345,6 +363,27 @@ async def join_assessment(
 
     # Serve first question using atomic invariant
     first_q = await serve_first_question_if_needed(db, new_attempt, assessment)
+    if not first_q:
+        fallback_stmt = (
+            select(Question)
+            .join(AssessmentQuestion, AssessmentQuestion.question_id == Question.id)
+            .where(AssessmentQuestion.assessment_id == assessment.id)
+        )
+        first_q = (await db.execute(fallback_stmt.limit(1))).scalar_one_or_none()
+        if first_q:
+            first_q.retired_at = None
+            new_attempt.current_question_id = first_q.id
+            new_attempt.current_question_started_at = now
+            serving = AttemptQuestionServing(
+                id=uuid.uuid4(),
+                attempt_id=new_attempt.id,
+                question_id=first_q.id,
+                sequence_number=1,
+                served_at=now
+            )
+            db.add(serving)
+            await db.flush()
+
     if not first_q:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assessment question pool has no available questions.")
