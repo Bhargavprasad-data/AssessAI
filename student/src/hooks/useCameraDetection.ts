@@ -18,23 +18,18 @@ export function isPhoneDetectionItem(
   const c = itemClass.toLowerCase().trim();
 
   // Filter out tiny background artifacts / specks
-  // Real phone held in camera view has:
-  // - shorter dimension at least 16px (in 640x480 resolution)
-  // - longer dimension at least 28px
-  // - bounding box area at least 450 px²
-  // Supports portrait, landscape, and angled orientations
   if (bbox && bbox.length >= 4) {
     const w = bbox[2];
     const h = bbox[3];
     const minDim = Math.min(w, h);
     const maxDim = Math.max(w, h);
     const area = w * h;
-    if (minDim < 16 || maxDim < 28 || area < 450) {
+    if (minDim < 14 || maxDim < 24 || area < 350) {
       return false;
     }
   }
 
-  // Direct mobile phone / telephone classes (sensitive threshold >= 0.26 for prompt detection)
+  // Direct mobile phone / telephone classes
   if (
     c === 'cell phone' ||
     c === 'cellphone' ||
@@ -44,16 +39,123 @@ export function isPhoneDetectionItem(
     c.includes('cell phone') ||
     c.includes('mobile')
   ) {
-    return score >= 0.26;
+    return score >= 0.20;
   }
 
   // Remote controls: phones with dark screens/cases are often detected as remotes
   if (c === 'remote') {
-    return score >= 0.38;
+    return score >= 0.24;
   }
 
-  // Note: 'mouse', 'keyboard', 'clock', 'laptop', 'tv' are explicitly NOT matched to avoid false alarms
+  // Clocks: modern smartphones with prominent circular camera rings or smartwatches held in view
+  if (c === 'clock') {
+    return score >= 0.18;
+  }
+
+  // Camera gadgets
+  if (c === 'camera') {
+    return score >= 0.20;
+  }
+
+  // Note: 'mouse', 'keyboard', 'laptop', 'tv' are explicitly NOT matched to avoid false alarms
   return false;
+}
+
+/**
+ * Optical Mobile Camera Island Scanner:
+ * Detects smartphones held facing backwards that feature a prominent concentric circular camera ring module
+ * (e.g. Realme, OnePlus, Vivo, Xiaomi, Oppo camera dials) which standard 2014 COCO-SSD weights fail to classify.
+ */
+export function detectPhoneCameraIsland(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement
+): DetectedItem | null {
+  const targetW = 240;
+  const targetH = 180;
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.drawImage(video, 0, 0, targetW, targetH);
+  const imgData = ctx.getImageData(0, 0, targetW, targetH);
+  const data = imgData.data;
+
+  function getLuma(x: number, y: number): number {
+    x = Math.max(0, Math.min(targetW - 1, x | 0));
+    y = Math.max(0, Math.min(targetH - 1, y | 0));
+    const idx = (y * targetW + x) * 4;
+    return 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+  }
+
+  const step = 8;
+  const radii = [20, 26, 32, 40];
+  const angles = [0, 0.785, 1.57, 2.356, 3.141, 3.927, 4.712, 5.498];
+
+  let bestMatch: { cx: number; cy: number; radius: number; score: number } | null = null;
+  let maxScore = 0;
+
+  for (let cy = 30; cy < targetH - 30; cy += step) {
+    for (let cx = 30; cx < targetW - 30; cx += step) {
+      let centerSum = getLuma(cx, cy);
+      centerSum += getLuma(cx - 5, cy) + getLuma(cx + 5, cy);
+      centerSum += getLuma(cx, cy - 5) + getLuma(cx, cy + 5);
+      const centerAvg = centerSum / 5;
+
+      if (centerAvg > 65) continue; // Real phone camera lens is dark
+
+      for (const r of radii) {
+        let ringSum = 0;
+        const ringVals: number[] = [];
+        for (const a of angles) {
+          const val = getLuma(cx + r * Math.cos(a), cy + r * Math.sin(a));
+          ringSum += val;
+          ringVals.push(val);
+        }
+        const ringAvg = ringSum / 8;
+
+        const contrast = ringAvg - centerAvg;
+        if (contrast < 42) continue;
+
+        let ringVar = 0;
+        for (const v of ringVals) {
+          ringVar += (v - ringAvg) * (v - ringAvg);
+        }
+        ringVar /= 8;
+
+        if (ringVar > 1800) continue;
+
+        const score = contrast - ringVar * 0.015;
+        if (score > 40 && score > maxScore) {
+          maxScore = score;
+          bestMatch = { cx, cy, radius: r, score };
+        }
+      }
+    }
+  }
+
+  if (bestMatch) {
+    const scaleX = (video.videoWidth || 640) / targetW;
+    const scaleY = (video.videoHeight || 480) / targetH;
+    const realX = bestMatch.cx * scaleX;
+    const realY = bestMatch.cy * scaleY;
+    const realR = bestMatch.radius * Math.max(scaleX, scaleY);
+    const boxW = Math.max(60, realR * 3.2);
+    const boxH = Math.max(90, realR * 4.2);
+
+    return {
+      class: 'cell phone',
+      score: Math.min(0.96, Math.max(0.72, bestMatch.score / 100)),
+      bbox: [
+        Math.max(0, realX - boxW / 2),
+        Math.max(0, realY - boxH / 2),
+        boxW,
+        boxH,
+      ],
+    };
+  }
+
+  return null;
 }
 
 export function isBookOrSecondaryScreen(
@@ -584,12 +686,12 @@ export function useCameraDetection({
                     setIsFaceDetected(false);
                   }
 
-                  if (isActive && noFaceConsecutiveFramesRef.current >= 12 && !noFaceIncidentActiveRef.current) {
+                  if (isActive && noFaceConsecutiveFramesRef.current >= 5 && !noFaceIncidentActiveRef.current) {
                     noFaceIncidentActiveRef.current = true;
                     triggerViolation(
                       'no_face',
-                      { message: 'Candidate face not visible in camera frame' },
-                      'Warning: Face not visible. Please look at the camera to write your exam.'
+                      { message: 'Candidate face not visible or obstructed in camera frame' },
+                      'Warning: Face not visible or obstructed. Please look at the camera to write your exam.'
                     );
                   }
                 }
@@ -703,23 +805,46 @@ export function useCameraDetection({
                   }
                 }
 
-                // Step 3: Precise COCO-SSD Object Detection for Mobile Phones and Unauthorized Materials
+                // Step 3: Dual Mobile Detection (Optical Camera Module Scanner + COCO-SSD)
                 const cocoModel = cocoModelRef.current;
+                let detectedPhoneItem: DetectedItem | null = null;
+                const validDetections: DetectedItem[] = [];
 
+                // 3a. Optical Camera Module Island Scan (detects phones facing backwards with circular camera modules)
+                if (canvasRef.current && liveVideo) {
+                  try {
+                    const islandItem = detectPhoneCameraIsland(liveVideo, canvasRef.current);
+                    if (islandItem) {
+                      validDetections.push(islandItem);
+                      detectedPhoneItem = islandItem;
+                    }
+                  } catch (e) {
+                    console.warn('Camera island scan error:', e);
+                  }
+                }
+
+                // 3b. COCO-SSD Neural Detection (detects front screens, phones, remotes)
                 if (cocoModel) {
                   try {
-                    const predictions = await cocoModel.detect(liveVideo, 10, 0.20);
-                    const validDetections: DetectedItem[] = predictions.map((p) => ({
-                      class: p.class.toLowerCase(),
-                      score: p.score,
-                      bbox: p.bbox,
-                    }));
-                    setDetectedItems(validDetections);
+                    const predictions = await cocoModel.detect(liveVideo, 10, 0.18);
+                    for (const p of predictions) {
+                      validDetections.push({
+                        class: p.class.toLowerCase(),
+                        score: p.score,
+                        bbox: p.bbox,
+                      });
+                    }
+                  } catch (objErr) {
+                    console.warn('COCO-SSD frame inference warning:', objErr);
+                  }
+                }
 
-                    // A. Mobile Phone / Electronic Device Detection
-                    const phoneDetection = validDetections.find((d) =>
-                      isPhoneDetectionItem(d.class, d.score, d.bbox)
-                    );
+                setDetectedItems(validDetections);
+
+                // A. Mobile Phone / Electronic Device Detection
+                const phoneDetection =
+                  detectedPhoneItem ||
+                  validDetections.find((d) => isPhoneDetectionItem(d.class, d.score, d.bbox));
 
                     if (phoneDetection) {
                       phoneConsecutiveFramesRef.current += 1;
@@ -788,13 +913,9 @@ export function useCameraDetection({
                         bookIncidentActiveRef.current = false;
                       }
                     }
-                  } catch (objErr) {
-                    console.warn('COCO-SSD frame inference warning:', objErr);
                   }
                 }
-              }
-            }
-          } catch (err) {
+              } catch (err) {
             console.warn('Proctoring inference frame error:', err);
           } finally {
             isDetectingRef.current = false;

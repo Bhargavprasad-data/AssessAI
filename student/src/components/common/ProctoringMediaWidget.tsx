@@ -171,6 +171,8 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
               ? '⚠️ Multiple Faces!'
               : isFaceMismatch
               ? '⚠️ Face Mismatch!'
+              : isCameraActive && personCount === 0
+              ? '⚠️ Face Not Visible!'
               : 'Proctor Active'}
           </span>
 
@@ -196,7 +198,11 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
         /* ── Full Widget Card ── */
         <div
           className={`w-72 rounded-2xl border ${
-            personCount > 1 || isFaceMismatch || mobileWarningActive ? 'border-rose-500 ring-2 ring-rose-500/50' : 'border-slate-700/80'
+            personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+              ? 'border-rose-500 ring-2 ring-rose-500/50'
+              : isCameraActive && personCount === 0
+              ? 'border-amber-500 ring-2 ring-amber-500/50'
+              : 'border-slate-700/80'
           } bg-slate-900/98 shadow-2xl overflow-hidden backdrop-blur-xl transition-colors duration-200`}
           style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)' }}
         >
@@ -204,18 +210,40 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
           <div
             onMouseDown={onMouseDown}
             className={`px-3.5 py-2.5 bg-gradient-to-r ${
-              personCount > 1 || isFaceMismatch || mobileWarningActive ? 'from-rose-900 to-rose-950' : 'from-slate-800 to-slate-800/60'
+              personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+                ? 'from-rose-900 to-rose-950'
+                : isCameraActive && personCount === 0
+                ? 'from-amber-900 to-amber-950'
+                : 'from-slate-800 to-slate-800/60'
             } border-b border-slate-700/80 flex items-center justify-between cursor-grab active:cursor-grabbing`}
           >
             <div className="flex items-center space-x-2">
-              <ShieldCheck className={`w-4 h-4 ${personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : 'text-brand-400'}`} />
+              <ShieldCheck className={`w-4 h-4 ${
+                personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+                  ? 'text-rose-400'
+                  : isCameraActive && personCount === 0
+                  ? 'text-amber-400'
+                  : 'text-brand-400'
+              }`} />
               <span className="text-xs font-bold text-white tracking-wide">Smart Proctor Feed</span>
               <span className="relative flex h-1.5 w-1.5 ml-1">
                 <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  personCount > 1 || isFaceMismatch || mobileWarningActive ? 'bg-rose-400' : allOk ? 'bg-emerald-400' : 'bg-amber-400'
+                  personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+                    ? 'bg-rose-400'
+                    : isCameraActive && personCount === 0
+                    ? 'bg-amber-400'
+                    : allOk
+                    ? 'bg-emerald-400'
+                    : 'bg-amber-400'
                 }`} />
                 <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                  personCount > 1 || isFaceMismatch || mobileWarningActive ? 'bg-rose-500' : allOk ? 'bg-emerald-500' : 'bg-amber-500'
+                  personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+                    ? 'bg-rose-500'
+                    : isCameraActive && personCount === 0
+                    ? 'bg-amber-500'
+                    : allOk
+                    ? 'bg-emerald-500'
+                    : 'bg-amber-500'
                 }`} />
               </span>
             </div>
@@ -280,6 +308,16 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
               </div>
             )}
 
+            {/* No Face Detected / Obstructed Warning Banner */}
+            {isCameraActive && personCount === 0 && !mobileWarningActive && !hasPhone && (
+              <div className="absolute bottom-0 inset-x-0 bg-amber-950/90 backdrop-blur-sm p-1.5 text-center border-t border-amber-500 flex items-center justify-center space-x-1.5 z-20">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 animate-bounce" />
+                <span className="text-[10px] font-bold text-amber-200">
+                  Warning: Face Not Visible — Keep face in camera view
+                </span>
+              </div>
+            )}
+
             {/* LIVE badge */}
             <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-slate-900/85 backdrop-blur border border-white/10 text-[10px] font-bold text-emerald-400 flex items-center space-x-1.5">
               <span className="relative flex h-1.5 w-1.5">
@@ -312,7 +350,15 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
                 <span className="font-semibold text-slate-300">Candidate Identity</span>
               </div>
               <div>
-                {personCount > 1 ? (
+                {!isCameraActive ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
+                    OFFLINE
+                  </span>
+                ) : personCount === 0 ? (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                    NO FACE DETECTED
+                  </span>
+                ) : personCount > 1 ? (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
                     {personCount} FACES (WARNING)
                   </span>
@@ -320,13 +366,9 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
                     MISMATCH ({faceMatchScore}%)
                   </span>
-                ) : isCameraActive ? (
+                ) : (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                     VERIFIED (MATCH)
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
-                    OFFLINE
                   </span>
                 )}
               </div>
@@ -408,21 +450,41 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
 
           {/* Footer status bar */}
           <div className={`px-3.5 py-2 flex items-center justify-between border-t border-slate-800 ${
-            personCount > 1 || isFaceMismatch || mobileWarningActive ? 'bg-rose-950/60' : allOk ? 'bg-emerald-950/40' : 'bg-rose-950/40'
+            personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+              ? 'bg-rose-950/60'
+              : isCameraActive && personCount === 0
+              ? 'bg-amber-950/60'
+              : allOk
+              ? 'bg-emerald-950/40'
+              : 'bg-rose-950/40'
           }`}>
             <div className="flex items-center space-x-1.5">
               <ShieldCheck className={`w-3.5 h-3.5 ${
-                personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'
+                personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+                  ? 'text-rose-400'
+                  : isCameraActive && personCount === 0
+                  ? 'text-amber-400'
+                  : allOk
+                  ? 'text-emerald-400'
+                  : 'text-rose-400'
               }`} />
               <span className={`text-[10px] font-bold tracking-wide ${
-                personCount > 1 || isFaceMismatch || mobileWarningActive ? 'text-rose-400' : allOk ? 'text-emerald-400' : 'text-rose-400'
+                personCount > 1 || isFaceMismatch || mobileWarningActive || hasPhone
+                  ? 'text-rose-400'
+                  : isCameraActive && personCount === 0
+                  ? 'text-amber-400'
+                  : allOk
+                  ? 'text-emerald-400'
+                  : 'text-rose-400'
               }`}>
                 {personCount > 1
                   ? `SECURITY WARNING: ${personCount} FACES DETECTED`
                   : isFaceMismatch
                   ? `IDENTITY WARNING: FACE MISMATCH (${faceMatchScore}%)`
-                  : mobileWarningActive
+                  : mobileWarningActive || hasPhone
                   ? 'UNAUTHORIZED OBJECT DETECTED'
+                  : isCameraActive && personCount === 0
+                  ? '⚠️ FACE NOT VISIBLE / OBSTRUCTED'
                   : allOk
                   ? 'ALL SYSTEMS NOMINAL'
                   : 'DEVICE OFFLINE — LOGGED'}
