@@ -49,16 +49,14 @@ def update_adaptive_counters(
     - Bound: EASY cannot decrease below EASY.
 
     MEDIUM Level:
-    - MEDIUM + CORRECT (+ FAST if speed-adaptive) -> Promotion event (promote to HARD when promotion_threshold reached, else stay MEDIUM).
+    - MEDIUM + CORRECT -> Promotion event (promote to HARD when promotion_threshold reached, else stay MEDIUM). A correct answer NEVER demotes.
     - MEDIUM + WRONG -> Demotion event (demote to EASY when demotion_threshold reached, else stay MEDIUM).
     - MEDIUM + TIMEOUT -> Demotion event (demote to EASY when demotion_threshold reached, else stay MEDIUM).
-    - In speed-adaptive mode: MEDIUM + CORRECT (slow) -> Demotion event (demote to EASY when demotion_threshold reached).
 
     HARD Level:
-    - HARD + CORRECT (+ FAST if speed-adaptive) -> Remain HARD (HARD is maximum limit, stays HARD).
+    - HARD + CORRECT -> Remain HARD (HARD is maximum limit, stays HARD). A correct answer NEVER demotes.
     - HARD + WRONG -> Demotion event (demote to MEDIUM when demotion_threshold reached, else stay HARD).
     - HARD + TIMEOUT -> Demotion event (demote to MEDIUM when demotion_threshold reached, else stay HARD).
-    - In speed-adaptive mode: HARD + CORRECT (slow) -> Demotion event (demote to MEDIUM when demotion_threshold reached).
 
     Boundary Invariants:
     - EASY: cannot decrease below easy.
@@ -80,7 +78,7 @@ def update_adaptive_counters(
         else:
             # EASY + CORRECT -> Promotion event
             new_prom = promotion_counter + 1
-            if new_prom >= prom_th:
+            if (enable_speed_adaptive and is_fast) or new_prom >= prom_th:
                 return "medium", 0, 0
             return "easy", new_prom, 0
 
@@ -93,19 +91,11 @@ def update_adaptive_counters(
                 return "easy", 0, 0
             return "medium", 0, new_dem
         else:
-            # is_correct == True
-            if enable_speed_adaptive and not is_fast:
-                # Speed-adaptive slow correct answer -> Demotion event
-                new_dem = demotion_counter + 1
-                if new_dem >= dem_th:
-                    return "easy", 0, 0
-                return "medium", 0, new_dem
-            else:
-                # Correct (+ Fast if speed-adaptive) -> Promotion event
-                new_prom = promotion_counter + 1
-                if new_prom >= prom_th:
-                    return "hard", 0, 0
-                return "medium", new_prom, 0
+            # is_correct == True -> Promotion event (A correct answer NEVER demotes!)
+            new_prom = promotion_counter + 1
+            if (enable_speed_adaptive and is_fast) or new_prom >= prom_th:
+                return "hard", 0, 0
+            return "medium", new_prom, 0
 
     # 3. HARD Level
     else:  # curr_diff == "hard"
@@ -116,16 +106,9 @@ def update_adaptive_counters(
                 return "medium", 0, 0
             return "hard", 0, new_dem
         else:
-            # is_correct == True
-            if enable_speed_adaptive and not is_fast:
-                # Speed-adaptive slow correct answer -> Demotion event
-                new_dem = demotion_counter + 1
-                if new_dem >= dem_th:
-                    return "medium", 0, 0
-                return "hard", 0, new_dem
-            else:
-                # HARD + CORRECT (+ FAST) -> Remain HARD (maximum)
-                return "hard", 0, 0
+            # is_correct == True -> Remain HARD (maximum difficulty level)
+            # A correct answer in HARD MUST NEVER demote to medium!
+            return "hard", 0, 0
 
 
 async def get_served_question_ids(session: AsyncSession, attempt_id) -> List:
@@ -173,7 +156,7 @@ async def select_next_adaptive_question(
             .join(AssessmentQuestion, AssessmentQuestion.question_id == Question.id)
             .where(
                 AssessmentQuestion.assessment_id == assessment.id,
-                func.lower(AssessmentQuestion.difficulty) == diff.lower(),
+                func.lower(func.coalesce(AssessmentQuestion.difficulty, Question.difficulty)) == diff.lower(),
                 Question.retired_at.is_(None)
             )
         )

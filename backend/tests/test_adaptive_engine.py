@@ -81,20 +81,20 @@ def test_medium_level_adaptive_behavior():
     assert prom == 0
     assert dem == 0
 
-    # 2. Correct + Slow in speed-adaptive mode -> Demotion event
+    # 2. Correct + Slow -> Still progresses toward HARD (A correct answer NEVER demotes)
     diff, prom, dem = update_adaptive_counters(
-        current_difficulty="medium", promotion_counter=1, demotion_counter=0,
-        is_correct=True, is_fast=False, enable_speed_adaptive=True, demotion_threshold=2
+        current_difficulty="medium", promotion_counter=0, demotion_counter=0,
+        is_correct=True, is_fast=False, enable_speed_adaptive=True, promotion_threshold=2
     )
     assert diff == "medium"
-    assert prom == 0
-    assert dem == 1
+    assert prom == 1
+    assert dem == 0
 
     diff, prom, dem = update_adaptive_counters(
-        current_difficulty="medium", promotion_counter=0, demotion_counter=1,
-        is_correct=True, is_fast=False, enable_speed_adaptive=True, demotion_threshold=2
+        current_difficulty="medium", promotion_counter=1, demotion_counter=0,
+        is_correct=True, is_fast=False, enable_speed_adaptive=True, promotion_threshold=2
     )
-    assert diff == "easy"
+    assert diff == "hard"
     assert prom == 0
     assert dem == 0
 
@@ -129,7 +129,7 @@ def test_hard_level_adaptive_behavior():
     """
     HARD level:
     - Correct + Fast: Remains at HARD (max difficulty).
-    - Correct + Slow (speed-adaptive enabled): Demotion event -> Demotes to MEDIUM at threshold.
+    - Correct + Slow: Remains at HARD (A correct answer in HARD NEVER demotes).
     - Incorrect: Demotion event -> Demotes to MEDIUM at threshold.
     - Timeout: Demotion event -> Demotes to MEDIUM at threshold.
     """
@@ -142,19 +142,20 @@ def test_hard_level_adaptive_behavior():
     assert prom == 0
     assert dem == 0
 
-    # 2. Correct + Slow in speed-adaptive mode -> Demotes to MEDIUM
+    # 2. Correct + Slow remains HARD (Correct answers in HARD never demote to MEDIUM)
     diff, prom, dem = update_adaptive_counters(
         current_difficulty="hard", promotion_counter=0, demotion_counter=0,
         is_correct=True, is_fast=False, enable_speed_adaptive=True, demotion_threshold=2
     )
     assert diff == "hard"
-    assert dem == 1
+    assert prom == 0
+    assert dem == 0
 
     diff, prom, dem = update_adaptive_counters(
         current_difficulty="hard", promotion_counter=0, demotion_counter=1,
         is_correct=True, is_fast=False, enable_speed_adaptive=True, demotion_threshold=2
     )
-    assert diff == "medium"
+    assert diff == "hard"
     assert prom == 0
     assert dem == 0
 
@@ -326,4 +327,68 @@ def test_strict_difficulty_boundaries_and_shuffling_transitions():
         demotion_threshold=1
     )
     assert diff == "medium"
+
+
+def test_user_reported_hard_correct_stays_hard_and_wrong_demotes():
+    """
+    User scenario verification:
+    1. Candidate answers a HARD question CORRECTLY in 32.4s (slow response, speed adaptive enabled)
+       -> Difficulty MUST remain HARD (must NOT demote to MEDIUM).
+    2. Candidate answers a HARD question WRONGLY
+       -> Difficulty shifts to MEDIUM.
+    3. Candidate answers a MEDIUM question WRONGLY
+       -> Difficulty shifts to EASY.
+    4. Candidate answers a MEDIUM question CORRECTLY
+       -> Difficulty shifts to HARD.
+    """
+    # 1. HARD + CORRECT (slow: 32.4s > 30s threshold) with speed adaptive enabled
+    diff, prom, dem = update_adaptive_counters(
+        current_difficulty="hard",
+        promotion_counter=0,
+        demotion_counter=0,
+        is_correct=True,
+        is_fast=False,
+        enable_speed_adaptive=True,
+        promotion_threshold=1,
+        demotion_threshold=1
+    )
+    assert diff == "hard", "Answering a HARD question correctly must stay HARD, even if slow"
+    assert prom == 0
+    assert dem == 0
+
+    # 2. HARD + WRONG -> Shifts to MEDIUM
+    diff, prom, dem = update_adaptive_counters(
+        current_difficulty="hard",
+        promotion_counter=0,
+        demotion_counter=0,
+        is_correct=False,
+        is_fast=False,
+        demotion_threshold=1
+    )
+    assert diff == "medium", "Answering a HARD question wrongly must shift to MEDIUM"
+    assert dem == 0
+
+    # 3. MEDIUM + WRONG -> Shifts to EASY
+    diff, prom, dem = update_adaptive_counters(
+        current_difficulty="medium",
+        promotion_counter=0,
+        demotion_counter=0,
+        is_correct=False,
+        is_fast=False,
+        demotion_threshold=1
+    )
+    assert diff == "easy", "Answering a MEDIUM question wrongly must shift to EASY"
+    assert dem == 0
+
+    # 4. MEDIUM + CORRECT -> Shifts to HARD
+    diff, prom, dem = update_adaptive_counters(
+        current_difficulty="medium",
+        promotion_counter=0,
+        demotion_counter=0,
+        is_correct=True,
+        is_fast=False,
+        promotion_threshold=1
+    )
+    assert diff == "hard", "Answering a MEDIUM question correctly must shift to HARD"
+    assert prom == 0
 
