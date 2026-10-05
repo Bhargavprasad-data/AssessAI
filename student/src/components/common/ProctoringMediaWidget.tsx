@@ -271,7 +271,7 @@ export const ProctoringMediaWidget: React.FC<ProctoringMediaWidgetProps> = ({
             )}
 
             {/* AI Object Guard Warning Banner Overlay on Mobile Detection */}
-            {(mobileWarningActive || hasPhone) && personCount <= 1 && (
+            {(mobileWarningActive || hasPhone) && (
               <div className="absolute bottom-0 inset-x-0 bg-rose-950/90 backdrop-blur-sm p-1.5 text-center border-t border-rose-500 flex items-center justify-center space-x-1.5 z-30">
                 <Smartphone className="w-3.5 h-3.5 text-rose-400 flex-shrink-0 animate-bounce" />
                 <span className="text-[10px] font-bold text-rose-200">

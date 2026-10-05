@@ -17,27 +17,42 @@ export function isPhoneDetectionItem(
 ): boolean {
   const c = itemClass.toLowerCase().trim();
 
-  // Filter out tiny background artifacts / specks (real held phone is at least 35x45 px and 2200 px² in 640x480)
+  // Filter out tiny background artifacts / specks
+  // Real phone held in camera view has:
+  // - shorter dimension at least 16px (in 640x480 resolution)
+  // - longer dimension at least 28px
+  // - bounding box area at least 450 px²
+  // Supports portrait, landscape, and angled orientations
   if (bbox && bbox.length >= 4) {
     const w = bbox[2];
     const h = bbox[3];
+    const minDim = Math.min(w, h);
+    const maxDim = Math.max(w, h);
     const area = w * h;
-    if (w < 35 || h < 45 || area < 2200) {
+    if (minDim < 16 || maxDim < 28 || area < 450) {
       return false;
     }
   }
 
-  // Direct mobile phone / telephone classes only (score >= 0.36 reliably rejects background clutter)
-  if (c === 'cell phone' || c === 'cellphone' || c === 'telephone' || c === 'phone' || c === 'mobile') {
-    return score >= 0.36;
+  // Direct mobile phone / telephone classes (sensitive threshold >= 0.26 for prompt detection)
+  if (
+    c === 'cell phone' ||
+    c === 'cellphone' ||
+    c === 'telephone' ||
+    c === 'phone' ||
+    c === 'mobile' ||
+    c.includes('cell phone') ||
+    c.includes('mobile')
+  ) {
+    return score >= 0.26;
   }
 
-  // Remote controls: only if high confidence (>= 0.50) to prevent keyboard/remote false alarms
+  // Remote controls: phones with dark screens/cases are often detected as remotes
   if (c === 'remote') {
-    return score >= 0.50;
+    return score >= 0.38;
   }
 
-  // Note: 'mouse' and 'clock' are explicitly NOT matched to avoid false alarms from student's desk mouse or wall clocks
+  // Note: 'mouse', 'keyboard', 'clock', 'laptop', 'tv' are explicitly NOT matched to avoid false alarms
   return false;
 }
 
@@ -463,9 +478,14 @@ export function useCameraDetection({
       const now = Date.now();
       // Run inference every 120ms
       if (now - lastInferenceTimeRef.current >= 120 && !isDetectingRef.current) {
+        const videoCandidates = [
+          document.getElementById('setup-camera-video') as HTMLVideoElement | null,
+          document.getElementById('proctoring-live-video') as HTMLVideoElement | null,
+          hiddenVideoRef.current,
+        ];
         const liveVideo =
-          (document.getElementById('setup-camera-video') as HTMLVideoElement) ||
-          (document.getElementById('proctoring-live-video') as HTMLVideoElement) ||
+          videoCandidates.find((v) => v && v.readyState >= 2 && v.videoWidth > 0 && !v.paused) ||
+          videoCandidates.find((v) => v && v.readyState >= 2 && v.videoWidth > 0) ||
           hiddenVideoRef.current;
 
         if (liveVideo && liveVideo.readyState >= 2 && liveVideo.videoWidth > 0) {
@@ -687,7 +707,7 @@ export function useCameraDetection({
 
                 if (cocoModel) {
                   try {
-                    const predictions = await cocoModel.detect(liveVideo, 10, 0.25);
+                    const predictions = await cocoModel.detect(liveVideo, 10, 0.20);
                     const validDetections: DetectedItem[] = predictions.map((p) => ({
                       class: p.class.toLowerCase(),
                       score: p.score,
@@ -704,10 +724,14 @@ export function useCameraDetection({
                       phoneConsecutiveFramesRef.current += 1;
                       phoneAbsentConsecutiveRef.current = 0;
 
-                      // Sustained detection: at least 3 consecutive frames (~360-450ms) confirms presence without 1-frame jitter
-                      if (phoneConsecutiveFramesRef.current >= 3) {
-                        setMobileWarningActive(true);
+                      // Immediate detection: Activate warning banner & widget pill right away!
+                      setMobileWarningActive(true);
 
+                      // Trigger strike violation if confident (>= 0.34) or confirmed across 2 frames (~200ms)
+                      const shouldTriggerViolation =
+                        phoneDetection.score >= 0.34 || phoneConsecutiveFramesRef.current >= 2;
+
+                      if (shouldTriggerViolation) {
                         if (isActive) {
                           phoneIncidentActiveRef.current = true;
                           triggerViolation(
@@ -725,8 +749,8 @@ export function useCameraDetection({
                     } else {
                       phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
                       phoneAbsentConsecutiveRef.current += 1;
-                      // Clear warning once phone is absent for 4 consecutive frames
-                      if (phoneAbsentConsecutiveRef.current >= 4) {
+                      // Clear warning once phone is absent for 3 consecutive frames (~360ms)
+                      if (phoneAbsentConsecutiveRef.current >= 3) {
                         phoneIncidentActiveRef.current = false;
                         setMobileWarningActive(false);
                       }
