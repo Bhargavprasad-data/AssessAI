@@ -1,17 +1,48 @@
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
 from app.models.attempt import Attempt
+from app.models.assessment import Assessment
+from app.models.proctoring import Violation
 from app.schemas.proctoring import ViolationSignalRequest, ViolationSignalResponse
 from app.api.deps import get_current_user
 from app.services.proctoring_service import record_violation_signal
 from app.api.websockets import ws_manager
 
 router = APIRouter(prefix="/proctoring", tags=["Proctoring Signals"])
+
+
+@router.get("/attempts/{attempt_id}/violations-status", response_model=ViolationSignalResponse)
+async def get_proctoring_violation_status(
+    attempt_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    attempt = await db.get(Attempt, attempt_id)
+    if not attempt or attempt.student_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found.")
+
+    assessment = await db.get(Assessment, attempt.assessment_id)
+    if not assessment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found.")
+
+    count = await db.scalar(
+        select(func.count(Violation.id)).where(Violation.attempt_id == attempt_id)
+    )
+    count = count or 0
+
+    return ViolationSignalResponse(
+        recorded=False,
+        total_violations=count,
+        max_violations=assessment.max_violations,
+        is_terminated=attempt.status == "terminated",
+        message=f"Current violations: {count}/{assessment.max_violations}"
+    )
 
 
 @router.post("/attempts/{attempt_id}/violations", response_model=ViolationSignalResponse)

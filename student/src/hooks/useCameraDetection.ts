@@ -434,6 +434,7 @@ export function useCameraDetection({
     bookConsecutiveFramesRef.current = 0;
     multipleFacesConsecutiveFramesRef.current = 0;
     faceMismatchConsecutiveRef.current = 0;
+    lastViolationTimeRef.current = {};
     setMobileWarningActive(false);
   }, []);
 
@@ -441,8 +442,8 @@ export function useCameraDetection({
   const triggerViolation = useCallback((type: string, metadata: Record<string, any>, spokenText?: string) => {
     const now = Date.now();
     const lastTime = lastViolationTimeRef.current[type] || 0;
-    // 8-second safety cooldown between repeated strikes of the same violation type
-    if (now - lastTime < 8000) {
+    // 2.5-second safety cooldown between repeated strikes of the same violation type
+    if (now - lastTime < 2500) {
       return;
     }
     lastViolationTimeRef.current[type] = now;

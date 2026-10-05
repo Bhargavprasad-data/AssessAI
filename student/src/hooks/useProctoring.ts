@@ -24,6 +24,30 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
   const lastCountRef = useRef<number>(0);
   const lastMaxRef = useRef<number>(3);
 
+  // Sync current strike count on attempt initialization or resumption
+  useEffect(() => {
+    if (!attemptId) return;
+    let isMounted = true;
+    apiFetch<{
+      total_violations: number;
+      max_violations: number;
+      is_terminated: boolean;
+      message: string;
+    }>(`/api/proctoring/attempts/${attemptId}/violations-status`)
+      .then((data) => {
+        if (!isMounted) return;
+        lastCountRef.current = data.total_violations;
+        lastMaxRef.current = data.max_violations;
+        if (data.is_terminated) {
+          onTerminated(data.message);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [attemptId, onTerminated]);
+
   const reportViolation = useCallback(async (type: string, metadata: Record<string, any> = {}) => {
     if (!isActive || !attemptId) return;
 
@@ -35,8 +59,8 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
 
     const now = Date.now();
     const lastTime = lastReportedTimeRef.current[type] || 0;
-    // 10-second client-side debounce filter between strikes of the same violation type
-    if (now - lastTime < 10000) {
+    // 2-second debounce filter between strikes of the same violation type
+    if (now - lastTime < 2000) {
       return;
     }
     lastReportedTimeRef.current[type] = now;
@@ -90,9 +114,10 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
       speechMsg = 'Warning: Screenshot attempt detected.';
     }
 
+    const nextCount = (lastCountRef.current || 0) + 1;
     setActiveWarning({
       type,
-      count: lastCountRef.current + 1,
+      count: nextCount,
       maxViolations: lastMaxRef.current || 3,
       message: defaultMsg,
     });
@@ -114,13 +139,14 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
         speakWarning('Exam terminated due to multiple security violations.', true);
         onTerminated(res.message);
       } else {
-        lastCountRef.current = res.total_violations;
+        const finalCount = res.recorded ? res.total_violations : Math.max(nextCount, res.total_violations);
+        lastCountRef.current = finalCount;
         lastMaxRef.current = res.max_violations;
         setActiveWarning((prev) =>
           prev
             ? {
                 ...prev,
-                count: res.total_violations,
+                count: finalCount,
                 maxViolations: res.max_violations,
               }
             : null
@@ -128,6 +154,7 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
       }
     } catch (err) {
       console.error('Failed to report proctoring signal:', err);
+      lastCountRef.current = nextCount;
     }
   }, [attemptId, isActive, onTerminated]);
 
@@ -196,12 +223,8 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
   }, [isActive, reportViolation]);
 
   const dismissWarning = useCallback(() => {
-    // When returning to exam, set timestamp to now - 8000ms
-    // With 10s debounce, this provides exactly 2 seconds of grace before another strike can trigger
-    const now = Date.now();
-    Object.keys(lastReportedTimeRef.current).forEach((key) => {
-      lastReportedTimeRef.current[key] = now - 8000;
-    });
+    // When returning to exam, clear cooldown timers so deliberate subsequent violations register promptly
+    lastReportedTimeRef.current = {};
     setActiveWarning(null);
   }, []);
 

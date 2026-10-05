@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     # Proctoring & Timing Defaults
     DEFAULT_MAX_VIOLATIONS: int = 3
-    VIOLATION_DEBOUNCE_SECONDS: float = 10.0
+    VIOLATION_DEBOUNCE_SECONDS: float = 2.0
     SWEEP_INTERVAL_SECONDS: int = 60
     DISCONNECT_IDLE_SECONDS: int = 300  # 5 minutes idle
     DISCONNECT_TIMEOUT_SECONDS: int = 1800  # 30 minutes cap
