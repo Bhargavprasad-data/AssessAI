@@ -86,51 +86,51 @@ async def init_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        def sync_missing_columns(sync_conn):
-            inspector = inspect(sync_conn)
-            table_names = inspector.get_table_names()
-            for table_name, table in Base.metadata.tables.items():
-                if table_name in table_names:
-                    existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
-                    for col in table.columns:
-                        if col.name not in existing_cols:
-                            try:
-                                col_type = col.type.compile(sync_conn.dialect)
-                                logger.info(f"Auto-migrating: Adding missing column '{col.name}' ({col_type}) to table '{table_name}'")
-                                sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"))
-                            except Exception as e:
-                                logger.warning(f"Could not auto-add column {col.name} to {table_name}: {e}")
+            def sync_missing_columns(sync_conn):
+                inspector = inspect(sync_conn)
+                table_names = inspector.get_table_names()
+                for table_name, table in Base.metadata.tables.items():
+                    if table_name in table_names:
+                        existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
+                        for col in table.columns:
+                            if col.name not in existing_cols:
+                                try:
+                                    col_type = col.type.compile(sync_conn.dialect)
+                                    logger.info(f"Auto-migrating: Adding missing column '{col.name}' ({col_type}) to table '{table_name}'")
+                                    sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"))
+                                except Exception as e:
+                                    logger.warning(f"Could not auto-add column {col.name} to {table_name}: {e}")
 
-        await conn.run_sync(sync_missing_columns)
+            await conn.run_sync(sync_missing_columns)
 
-        def sync_schema_migrations(sync_conn):
-            dialect = sync_conn.dialect.name
-            if "postgres" in dialect:
-                try:
-                    sync_conn.execute(text("SAVEPOINT alter_mat_id"))
-                    sync_conn.execute(text("ALTER TABLE questions ALTER COLUMN material_id DROP NOT NULL;"))
-                    sync_conn.execute(text("RELEASE SAVEPOINT alter_mat_id"))
-                    logger.info("Auto-migrating: questions.material_id altered to DROP NOT NULL.")
-                except Exception as e:
+            def sync_schema_migrations(sync_conn):
+                dialect = sync_conn.dialect.name
+                if "postgres" in dialect:
                     try:
-                        sync_conn.execute(text("ROLLBACK TO SAVEPOINT alter_mat_id"))
-                    except Exception:
-                        pass
-                    logger.debug(f"PostgreSQL migration notice (material_id drop not null): {e}")
+                        sync_conn.execute(text("SAVEPOINT alter_mat_id"))
+                        sync_conn.execute(text("ALTER TABLE questions ALTER COLUMN material_id DROP NOT NULL;"))
+                        sync_conn.execute(text("RELEASE SAVEPOINT alter_mat_id"))
+                        logger.info("Auto-migrating: questions.material_id altered to DROP NOT NULL.")
+                    except Exception as e:
+                        try:
+                            sync_conn.execute(text("ROLLBACK TO SAVEPOINT alter_mat_id"))
+                        except Exception:
+                            pass
+                        logger.debug(f"PostgreSQL migration notice (material_id drop not null): {e}")
 
-            # Un-retire any questions assigned to assessments
-            try:
-                sync_conn.execute(text("""
-                    UPDATE questions
-                    SET retired_at = NULL
-                    WHERE retired_at IS NOT NULL
-                    AND id IN (SELECT question_id FROM assessment_questions);
-                """))
-                logger.info("Auto-migrating: Un-retired active assessment questions.")
-            except Exception as e:
-                logger.debug(f"Assessment questions un-retire notice: {e}")
+                # Un-retire any questions assigned to assessments
+                try:
+                    sync_conn.execute(text("""
+                        UPDATE questions
+                        SET retired_at = NULL
+                        WHERE retired_at IS NOT NULL
+                        AND id IN (SELECT question_id FROM assessment_questions);
+                    """))
+                    logger.info("Auto-migrating: Un-retired active assessment questions.")
+                except Exception as e:
+                    logger.debug(f"Assessment questions un-retire notice: {e}")
 
-        await conn.run_sync(sync_schema_migrations)
+            await conn.run_sync(sync_schema_migrations)
     except Exception as e:
         err_str = str(e)
         logger.error(f"Database connection initialization failed: {err_str}")
