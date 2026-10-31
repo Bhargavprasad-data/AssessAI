@@ -67,7 +67,9 @@ export function speakWarning(message: string, force: boolean = false): void {
   if (typeof window === 'undefined') return;
 
   const now = Date.now();
-  if (!force && message === lastSpokenText && now - lastSpokenTime < 2500) {
+  // Minimum 6-8s cooldown between identical spoken warnings to prevent rapid audio loops
+  const minInterval = force ? 6000 : 8000;
+  if (message === lastSpokenText && now - lastSpokenTime < minInterval) {
     return;
   }
 

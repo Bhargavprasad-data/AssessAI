@@ -17,19 +17,19 @@ export function isPhoneDetectionItem(
 ): boolean {
   const c = itemClass.toLowerCase().trim();
 
-  // Filter out tiny background artifacts / specks
+  // Filter out tiny background artifacts / specks / pen tips
   if (bbox && bbox.length >= 4) {
     const w = bbox[2];
     const h = bbox[3];
     const minDim = Math.min(w, h);
     const maxDim = Math.max(w, h);
     const area = w * h;
-    if (minDim < 14 || maxDim < 24 || area < 350) {
+    if (minDim < 20 || maxDim < 35 || area < 700) {
       return false;
     }
   }
 
-  // Direct mobile phone / telephone classes
+  // Direct mobile phone / telephone classes - robust confidence threshold
   if (
     c === 'cell phone' ||
     c === 'cellphone' ||
@@ -39,22 +39,22 @@ export function isPhoneDetectionItem(
     c.includes('cell phone') ||
     c.includes('mobile')
   ) {
-    return score >= 0.20;
+    return score >= 0.38;
   }
 
   // Remote controls: phones with dark screens/cases are often detected as remotes
   if (c === 'remote') {
-    return score >= 0.24;
+    return score >= 0.45;
   }
 
-  // Clocks: modern smartphones with prominent circular camera rings or smartwatches held in view
+  // Clocks: only match if high confidence smartwatch/clock held directly, never low-score wristwatches while writing
   if (c === 'clock') {
-    return score >= 0.18;
+    return score >= 0.65;
   }
 
   // Camera gadgets
   if (c === 'camera') {
-    return score >= 0.20;
+    return score >= 0.45;
   }
 
   // Note: 'mouse', 'keyboard', 'laptop', 'tv' are explicitly NOT matched to avoid false alarms
@@ -115,7 +115,7 @@ export function detectPhoneCameraIsland(
         const ringAvg = ringSum / 8;
 
         const contrast = ringAvg - centerAvg;
-        if (contrast < 42) continue;
+        if (contrast < 52) continue;
 
         let ringVar = 0;
         for (const v of ringVals) {
@@ -123,10 +123,10 @@ export function detectPhoneCameraIsland(
         }
         ringVar /= 8;
 
-        if (ringVar > 1800) continue;
+        if (ringVar > 1600) continue;
 
         const score = contrast - ringVar * 0.015;
-        if (score > 40 && score > maxScore) {
+        if (score > 55 && score > maxScore) {
           maxScore = score;
           bestMatch = { cx, cy, radius: r, score };
         }
@@ -134,14 +134,14 @@ export function detectPhoneCameraIsland(
     }
   }
 
-  if (bestMatch) {
+  if (bestMatch && maxScore >= 55) {
     const scaleX = (video.videoWidth || 640) / targetW;
     const scaleY = (video.videoHeight || 480) / targetH;
     const realX = bestMatch.cx * scaleX;
     const realY = bestMatch.cy * scaleY;
     const realR = bestMatch.radius * Math.max(scaleX, scaleY);
-    const boxW = Math.max(60, realR * 3.2);
-    const boxH = Math.max(90, realR * 4.2);
+    const boxW = Math.max(80, realR * 3.2);
+    const boxH = Math.max(120, realR * 4.2);
 
     return {
       class: 'cell phone',
@@ -423,10 +423,12 @@ export function useCameraDetection({
   const phoneIncidentActiveRef = useRef<boolean>(false);
   const phoneConsecutiveFramesRef = useRef<number>(0);
   const phoneAbsentConsecutiveRef = useRef<number>(0);
+  const phoneGracePeriodUntilRef = useRef<number>(0);
 
   const bookIncidentActiveRef = useRef<boolean>(false);
   const bookConsecutiveFramesRef = useRef<number>(0);
   const bookAbsentConsecutiveRef = useRef<number>(0);
+  const bookGracePeriodUntilRef = useRef<number>(0);
 
   const multipleFacesIncidentActiveRef = useRef<boolean>(false);
   const noFaceIncidentActiveRef = useRef<boolean>(false);
@@ -527,6 +529,11 @@ export function useCameraDetection({
 
   // Reset active incident flags on user acknowledgement or resume
   const resetDetectionIncidents = useCallback(() => {
+    // 10-second post-dismissal grace window so candidate has time to put away mobile/materials
+    const graceUntil = Date.now() + 10000;
+    phoneGracePeriodUntilRef.current = graceUntil;
+    bookGracePeriodUntilRef.current = graceUntil;
+
     phoneIncidentActiveRef.current = false;
     bookIncidentActiveRef.current = false;
     multipleFacesIncidentActiveRef.current = false;
@@ -536,7 +543,14 @@ export function useCameraDetection({
     bookConsecutiveFramesRef.current = 0;
     multipleFacesConsecutiveFramesRef.current = 0;
     faceMismatchConsecutiveRef.current = 0;
-    lastViolationTimeRef.current = {};
+
+    // Apply grace cooldown to last violation times so subsequent strikes cannot immediately re-fire
+    lastViolationTimeRef.current['mobile_detected'] = graceUntil;
+    lastViolationTimeRef.current['unauthorized_object'] = graceUntil;
+    lastViolationTimeRef.current['multiple_faces'] = graceUntil;
+    lastViolationTimeRef.current['face_mismatch'] = graceUntil;
+    lastViolationTimeRef.current['no_face'] = graceUntil;
+
     setMobileWarningActive(false);
   }, []);
 
@@ -544,14 +558,14 @@ export function useCameraDetection({
   const triggerViolation = useCallback((type: string, metadata: Record<string, any>, spokenText?: string) => {
     const now = Date.now();
     const lastTime = lastViolationTimeRef.current[type] || 0;
-    // 2.5-second safety cooldown between repeated strikes of the same violation type
-    if (now - lastTime < 2500) {
+    // 10-second safety cooldown between repeated strikes of the same violation type
+    if (now - lastTime < 10000) {
       return;
     }
     lastViolationTimeRef.current[type] = now;
 
     if (spokenText) {
-      speakWarning(spokenText, true);
+      speakWarning(spokenText, false);
     }
 
     onViolation?.(type, metadata);
@@ -846,73 +860,89 @@ export function useCameraDetection({
                   detectedPhoneItem ||
                   validDetections.find((d) => isPhoneDetectionItem(d.class, d.score, d.bbox));
 
-                    if (phoneDetection) {
-                      phoneConsecutiveFramesRef.current += 1;
-                      phoneAbsentConsecutiveRef.current = 0;
+                const now = Date.now();
+                const isPhoneGraceActive = now < phoneGracePeriodUntilRef.current;
+                const isBookGraceActive = now < bookGracePeriodUntilRef.current;
 
-                      // Immediate detection: Activate warning banner & widget pill right away!
-                      setMobileWarningActive(true);
+                if (phoneDetection) {
+                  phoneConsecutiveFramesRef.current += 1;
+                  phoneAbsentConsecutiveRef.current = 0;
 
-                      // Trigger strike violation if confident (>= 0.34) or confirmed across 2 frames (~200ms)
-                      const shouldTriggerViolation =
-                        phoneDetection.score >= 0.34 || phoneConsecutiveFramesRef.current >= 2;
+                  // Immediate visual notification: Keep widget / status banner red while phone is in view
+                  setMobileWarningActive(true);
 
-                      if (shouldTriggerViolation) {
-                        if (isActive) {
-                          phoneIncidentActiveRef.current = true;
-                          triggerViolation(
-                            'mobile_detected',
-                            {
-                              object: 'Mobile Phone',
-                              detected_class: phoneDetection.class,
-                              confidence: Math.round(phoneDetection.score * 100),
-                              bbox: phoneDetection.bbox,
-                            },
-                            'Warning: Mobile phone detected. Close your mobile and please write your exam.'
-                          );
-                        }
-                      }
-                    } else {
-                      phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
-                      phoneAbsentConsecutiveRef.current += 1;
-                      // Clear warning once phone is absent for 3 consecutive frames (~360ms)
-                      if (phoneAbsentConsecutiveRef.current >= 3) {
-                        phoneIncidentActiveRef.current = false;
-                        setMobileWarningActive(false);
-                      }
-                    }
+                  // Sustained detection: confirmed across at least 3 frames (~360ms)
+                  const isConfirmedPhone = phoneConsecutiveFramesRef.current >= 3;
 
-                    // B. Study Material / Book Detection
-                    const bookDetection = validDetections.find((d) =>
-                      isBookOrSecondaryScreen(d.class, d.score, d.bbox)
+                  // Trigger a single violation strike incident ONLY IF:
+                  // 1. Exam is active
+                  // 2. Confirmed presence across frames
+                  // 3. Grace period after dismiss has elapsed
+                  // 4. An incident is NOT already active (prevent repeating strikes for the same sighting!)
+                  if (
+                    isActive &&
+                    isConfirmedPhone &&
+                    !isPhoneGraceActive &&
+                    !phoneIncidentActiveRef.current
+                  ) {
+                    phoneIncidentActiveRef.current = true;
+                    triggerViolation(
+                      'mobile_detected',
+                      {
+                        object: 'Mobile Phone',
+                        detected_class: phoneDetection.class,
+                        confidence: Math.round(phoneDetection.score * 100),
+                        bbox: phoneDetection.bbox,
+                      },
+                      'Warning: Mobile phone detected. Close your mobile and please write your exam.'
                     );
+                  }
+                } else {
+                  phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
+                  phoneAbsentConsecutiveRef.current += 1;
+                  // Clear active incident and warning once phone is absent for at least 12 frames (~1.5s)
+                  if (phoneAbsentConsecutiveRef.current >= 12) {
+                    phoneIncidentActiveRef.current = false;
+                    setMobileWarningActive(false);
+                  }
+                }
 
-                    if (bookDetection && !phoneDetection) {
-                      bookConsecutiveFramesRef.current += 1;
-                      bookAbsentConsecutiveRef.current = 0;
+                // B. Study Material / Book Detection
+                const bookDetection = validDetections.find((d) =>
+                  isBookOrSecondaryScreen(d.class, d.score, d.bbox)
+                );
 
-                      if (bookConsecutiveFramesRef.current >= 3) {
-                        if (isActive) {
-                          bookIncidentActiveRef.current = true;
-                          triggerViolation(
-                            'unauthorized_object',
-                            {
-                              object: 'Study Material / Book',
-                              detected_class: bookDetection.class,
-                              confidence: Math.round(bookDetection.score * 100),
-                              bbox: bookDetection.bbox,
-                            },
-                            'Warning: Unauthorized material detected. Please remove it and write your exam.'
-                          );
-                        }
-                      }
-                    } else {
-                      bookConsecutiveFramesRef.current = Math.max(0, bookConsecutiveFramesRef.current - 1);
-                      bookAbsentConsecutiveRef.current += 1;
-                      if (bookAbsentConsecutiveRef.current >= 4) {
-                        bookIncidentActiveRef.current = false;
-                      }
-                    }
+                if (bookDetection && !phoneDetection) {
+                  bookConsecutiveFramesRef.current += 1;
+                  bookAbsentConsecutiveRef.current = 0;
+
+                  const isConfirmedBook = bookConsecutiveFramesRef.current >= 4;
+
+                  if (
+                    isActive &&
+                    isConfirmedBook &&
+                    !isBookGraceActive &&
+                    !bookIncidentActiveRef.current
+                  ) {
+                    bookIncidentActiveRef.current = true;
+                    triggerViolation(
+                      'unauthorized_object',
+                      {
+                        object: 'Study Material / Book',
+                        detected_class: bookDetection.class,
+                        confidence: Math.round(bookDetection.score * 100),
+                        bbox: bookDetection.bbox,
+                      },
+                      'Warning: Unauthorized material detected. Please remove it and write your exam.'
+                    );
+                  }
+                } else {
+                  bookConsecutiveFramesRef.current = Math.max(0, bookConsecutiveFramesRef.current - 1);
+                  bookAbsentConsecutiveRef.current += 1;
+                  if (bookAbsentConsecutiveRef.current >= 12) {
+                    bookIncidentActiveRef.current = false;
+                  }
+                }
                   }
                 }
               } catch (err) {

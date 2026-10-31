@@ -59,8 +59,8 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
 
     const now = Date.now();
     const lastTime = lastReportedTimeRef.current[type] || 0;
-    // 2-second debounce filter between strikes of the same violation type
-    if (now - lastTime < 2000) {
+    // 8-second debounce filter between strikes of the same violation type
+    if (now < lastTime || now - lastTime < 8000) {
       return;
     }
     lastReportedTimeRef.current[type] = now;
@@ -223,8 +223,11 @@ export const useProctoring = ({ attemptId, isActive, onTerminated }: UseProctori
   }, [isActive, reportViolation]);
 
   const dismissWarning = useCallback(() => {
-    // When returning to exam, clear cooldown timers so deliberate subsequent violations register promptly
-    lastReportedTimeRef.current = {};
+    // When returning to exam, set an 8-second grace window for this violation type so the student can correct their setup
+    const now = Date.now();
+    if (activeWarningRef.current) {
+      lastReportedTimeRef.current[activeWarningRef.current.type] = now + 8000;
+    }
     setActiveWarning(null);
   }, []);
 
