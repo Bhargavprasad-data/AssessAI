@@ -17,48 +17,45 @@ export function isPhoneDetectionItem(
 ): boolean {
   const c = itemClass.toLowerCase().trim();
 
-  // Filter out tiny background artifacts / specks / pen tips
+  // STRICT: Match ONLY genuine mobile phone / cell phone classes from COCO-SSD
+  // (Do NOT match 'remote', 'clock', 'camera', 'laptop', or 'tv' to avoid false positives on clothes, doors, chairs, and pens)
+  const isCellPhone =
+    c === 'cell phone' ||
+    c === 'cellphone' ||
+    c === 'mobile phone' ||
+    c === 'telephone' ||
+    c === 'phone';
+
+  if (!isCellPhone) {
+    return false;
+  }
+
+  // Require solid confidence from COCO-SSD (at least 50% confidence)
+  if (score < 0.50) {
+    return false;
+  }
+
+  // Filter out tiny background artifacts, specks, or oversized full-frame noise
   if (bbox && bbox.length >= 4) {
     const w = bbox[2];
     const h = bbox[3];
     const minDim = Math.min(w, h);
     const maxDim = Math.max(w, h);
     const area = w * h;
-    if (minDim < 20 || maxDim < 35 || area < 700) {
+
+    // Minimum size for a phone held or resting in front of webcam
+    if (minDim < 30 || maxDim < 45 || area < 1800 || area > 200000) {
+      return false;
+    }
+
+    // Geometry check: smartphones have rectangular aspect ratios (between 1.15 and 3.6)
+    const aspectRatio = maxDim / Math.max(1, minDim);
+    if (aspectRatio < 1.15 || aspectRatio > 3.6) {
       return false;
     }
   }
 
-  // Direct mobile phone / telephone classes - robust confidence threshold
-  if (
-    c === 'cell phone' ||
-    c === 'cellphone' ||
-    c === 'telephone' ||
-    c === 'phone' ||
-    c === 'mobile' ||
-    c.includes('cell phone') ||
-    c.includes('mobile')
-  ) {
-    return score >= 0.38;
-  }
-
-  // Remote controls: phones with dark screens/cases are often detected as remotes
-  if (c === 'remote') {
-    return score >= 0.45;
-  }
-
-  // Clocks: only match if high confidence smartwatch/clock held directly, never low-score wristwatches while writing
-  if (c === 'clock') {
-    return score >= 0.65;
-  }
-
-  // Camera gadgets
-  if (c === 'camera') {
-    return score >= 0.45;
-  }
-
-  // Note: 'mouse', 'keyboard', 'laptop', 'tv' are explicitly NOT matched to avoid false alarms
-  return false;
+  return true;
 }
 
 /**
@@ -820,27 +817,14 @@ export function useCameraDetection({
                 }
 
                 // Step 3: Dual Mobile Detection (Optical Camera Module Scanner + COCO-SSD)
+                // Step 3: Neural Object Detection with COCO-SSD
                 const cocoModel = cocoModelRef.current;
-                let detectedPhoneItem: DetectedItem | null = null;
                 const validDetections: DetectedItem[] = [];
 
-                // 3a. Optical Camera Module Island Scan (detects phones facing backwards with circular camera modules)
-                if (canvasRef.current && liveVideo) {
-                  try {
-                    const islandItem = detectPhoneCameraIsland(liveVideo, canvasRef.current);
-                    if (islandItem) {
-                      validDetections.push(islandItem);
-                      detectedPhoneItem = islandItem;
-                    }
-                  } catch (e) {
-                    console.warn('Camera island scan error:', e);
-                  }
-                }
-
-                // 3b. COCO-SSD Neural Detection (detects front screens, phones, remotes)
                 if (cocoModel) {
                   try {
-                    const predictions = await cocoModel.detect(liveVideo, 10, 0.18);
+                    // Detect objects with reliable confidence threshold (0.35)
+                    const predictions = await cocoModel.detect(liveVideo, 8, 0.35);
                     for (const p of predictions) {
                       validDetections.push({
                         class: p.class.toLowerCase(),
@@ -855,10 +839,10 @@ export function useCameraDetection({
 
                 setDetectedItems(validDetections);
 
-                // A. Mobile Phone / Electronic Device Detection
-                const phoneDetection =
-                  detectedPhoneItem ||
-                  validDetections.find((d) => isPhoneDetectionItem(d.class, d.score, d.bbox));
+                // A. Mobile Phone Detection (Strictly true cell phones from COCO-SSD)
+                const phoneDetection = validDetections.find((d) =>
+                  isPhoneDetectionItem(d.class, d.score, d.bbox)
+                );
 
                 const now = Date.now();
                 const isPhoneGraceActive = now < phoneGracePeriodUntilRef.current;
@@ -868,34 +852,35 @@ export function useCameraDetection({
                   phoneConsecutiveFramesRef.current += 1;
                   phoneAbsentConsecutiveRef.current = 0;
 
-                  // Immediate visual notification: Keep widget / status banner red while phone is in view
-                  setMobileWarningActive(true);
+                  // Sustained detection: confirmed across at least 4 consecutive frames (~500ms)
+                  const isConfirmedPhone = phoneConsecutiveFramesRef.current >= 4;
 
-                  // Sustained detection: confirmed across at least 3 frames (~360ms)
-                  const isConfirmedPhone = phoneConsecutiveFramesRef.current >= 3;
+                  if (isConfirmedPhone) {
+                    // Keep widget / status banner red while phone is in view
+                    setMobileWarningActive(true);
 
-                  // Trigger a single violation strike incident ONLY IF:
-                  // 1. Exam is active
-                  // 2. Confirmed presence across frames
-                  // 3. Grace period after dismiss has elapsed
-                  // 4. An incident is NOT already active (prevent repeating strikes for the same sighting!)
-                  if (
-                    isActive &&
-                    isConfirmedPhone &&
-                    !isPhoneGraceActive &&
-                    !phoneIncidentActiveRef.current
-                  ) {
-                    phoneIncidentActiveRef.current = true;
-                    triggerViolation(
-                      'mobile_detected',
-                      {
-                        object: 'Mobile Phone',
-                        detected_class: phoneDetection.class,
-                        confidence: Math.round(phoneDetection.score * 100),
-                        bbox: phoneDetection.bbox,
-                      },
-                      'Warning: Mobile phone detected. Close your mobile and please write your exam.'
-                    );
+                    // Trigger a single violation strike incident ONLY IF:
+                    // 1. Exam is active
+                    // 2. Confirmed presence across frames
+                    // 3. Grace period after dismiss has elapsed
+                    // 4. An incident is NOT already active (prevent repeating strikes for the same sighting!)
+                    if (
+                      isActive &&
+                      !isPhoneGraceActive &&
+                      !phoneIncidentActiveRef.current
+                    ) {
+                      phoneIncidentActiveRef.current = true;
+                      triggerViolation(
+                        'mobile_detected',
+                        {
+                          object: 'Mobile Phone',
+                          detected_class: phoneDetection.class,
+                          confidence: Math.round(phoneDetection.score * 100),
+                          bbox: phoneDetection.bbox,
+                        },
+                        'Warning: Mobile phone detected. Close your mobile and please write your exam.'
+                      );
+                    }
                   }
                 } else {
                   phoneConsecutiveFramesRef.current = Math.max(0, phoneConsecutiveFramesRef.current - 1);
