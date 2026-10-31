@@ -7,11 +7,13 @@ from app.config import settings
 from sqlalchemy import event
 
 # Sanitize and normalize database URL
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
-    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+raw_db_url = str(settings.DATABASE_URL or "").strip().strip("'\"")
+if raw_db_url.startswith("postgres://"):
+    db_url = raw_db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif raw_db_url.startswith("postgresql://") and "+asyncpg" not in raw_db_url:
+    db_url = raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    db_url = raw_db_url
 
 # Engine configuration
 connect_args = {}
@@ -69,10 +71,20 @@ async def init_db():
     from datetime import datetime, timezone
     from app.models.user import User
     from app.core.security import get_password_hash
+    from urllib.parse import urlsplit
     logger = logging.getLogger(__name__)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Diagnostic logging of target database host without exposing credentials
+    try:
+        parsed = urlsplit(db_url)
+        masked_host = parsed.hostname or "local/embedded"
+        logger.info(f"Connecting to database backend: dialect='{parsed.scheme}', host='{masked_host}', port={parsed.port}, database='{parsed.path.lstrip('/')}'")
+    except Exception:
+        pass
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
         def sync_missing_columns(sync_conn):
             inspector = inspect(sync_conn)
@@ -119,6 +131,30 @@ async def init_db():
                 logger.debug(f"Assessment questions un-retire notice: {e}")
 
         await conn.run_sync(sync_schema_migrations)
+    except Exception as e:
+        err_str = str(e)
+        logger.error(f"Database connection initialization failed: {err_str}")
+        if "gaierror" in err_str or "Name or service not known" in err_str or "getaddrinfo" in err_str:
+            try:
+                target_host = urlsplit(db_url).hostname
+            except Exception:
+                target_host = "specified host"
+            logger.error(
+                f"\n{'='*70}\n"
+                f"❌ DATABASE DNS LOOKUP FAILED FOR HOST: '{target_host}'\n"
+                f"{'='*70}\n"
+                f"Your app could not resolve the database host name '{target_host}'.\n"
+                f"If you are deploying on Render:\n"
+                f"1. RENDER POSTGRES REGION MISMATCH:\n"
+                f"   Render 'Internal Database URLs' only work if the Web Service and Database are in the same region.\n"
+                f"   👉 FIX: Use the 'External Database URL' in Render Dashboard -> Environment -> DATABASE_URL.\n\n"
+                f"2. COPIED DOCKER-COMPOSE HOST:\n"
+                f"   If your host is 'postgres' or 'localhost', change it to your actual remote PostgreSQL host.\n\n"
+                f"3. ZERO-CONFIG SQLITE FALLBACK:\n"
+                f"   If you want to use the free built-in SQLite database, delete the DATABASE_URL environment variable in Render.\n"
+                f"{'='*70}\n"
+            )
+        raise
 
     # Ensure authoritative admin accounts exist and credentials are valid
     async with AsyncSessionLocal() as session:
