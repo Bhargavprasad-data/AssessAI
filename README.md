@@ -5,7 +5,7 @@
 ![AssessAI Logo](logo.png)
 
 **An enterprise-grade, full-stack adaptive assessment platform with AI question generation, edge-biometric proctoring telemetry, real-time WebSocket monitoring, and database-authoritative ranking.**
-
+ 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110.0-009688.svg?style=flat&logo=fastapi)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18.3.1-61DAFB.svg?style=flat&logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.0-3178C6.svg?style=flat&logo=typescript)](https://www.typescriptlang.org/)
