@@ -14,7 +14,7 @@
 [![Render](https://img.shields.io/badge/Render-Deployed-46E3B7.svg?style=flat&logo=render)](https://render.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-</div>
+</div> 
 
 ---
 
